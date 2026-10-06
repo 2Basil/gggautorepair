@@ -1,0 +1,160 @@
+// PitStop Garage — database schema (SQLite via Prisma)
+// Enums are stored as plain strings (see lib/config.js) so the schema works on SQLite and Postgres alike.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  name          String
+  email         String         @unique
+  phone         String
+  address       String?
+  city          String?
+  passwordHash  String
+  role          String         @default("CUSTOMER") // CUSTOMER | OWNER
+  createdAt     DateTime       @default(now())
+  vehicles      Vehicle[]
+  jobs          Job[]
+  bills         Bill[]
+  subscriptions Subscription[]
+}
+
+model Vehicle {
+  id            Int            @id @default(autoincrement())
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  regNo         String         @unique
+  make          String
+  model         String
+  year          Int
+  type          String         @default("HATCHBACK") // HATCHBACK | SEDAN | SUV | LUXURY
+  fuel          String         @default("PETROL")
+  color         String?
+  odometer      Int            @default(0)
+  createdAt     DateTime       @default(now())
+  jobs          Job[]
+  bills         Bill[]
+  subscriptions Subscription[]
+
+  @@index([userId])
+}
+
+model Service {
+  id          Int     @id @default(autoincrement())
+  name        String
+  category    String // Repairing | Washing | Modification | Maintenance
+  description String
+  basePrice   Int // INR, for a hatchback
+  keywords    String // comma separated, used by the estimate engine
+  active      Boolean @default(true)
+}
+
+model Plan {
+  id            Int            @id @default(autoincrement())
+  tier          String // SHINE | CARE | ELITE
+  name          String
+  period        String // MONTHLY | YEARLY
+  price         Int
+  perks         String // newline separated
+  popular       Boolean        @default(false)
+  subscriptions Subscription[]
+
+  @@unique([tier, period])
+}
+
+model Subscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId Int
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  planId    Int
+  plan      Plan     @relation(fields: [planId], references: [id])
+  status    String   @default("ACTIVE")
+  startsAt  DateTime @default(now())
+  endsAt    DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([vehicleId])
+}
+
+model Job {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId Int
+  vehicle   Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  query     String
+  estMin    Int
+  estMax    Int
+  status    String    @default("BOOKED") // BOOKED | REPAIRING | REPAIRED | TESTING | READY | DELIVERED | CANCELLED
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  items     JobItem[]
+  logs      JobLog[]
+  bills     Bill[]
+
+  @@index([userId])
+  @@index([vehicleId])
+}
+
+model JobItem {
+  id          Int    @id @default(autoincrement())
+  jobId       Int
+  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  description String
+  category    String @default("Repairing")
+  qty         Int    @default(1)
+  unitPrice   Int
+}
+
+model JobLog {
+  id        Int      @id @default(autoincrement())
+  jobId     Int
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    String
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model Bill {
+  id        Int        @id @default(autoincrement())
+  number    String     @unique
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicleId Int
+  vehicle   Vehicle    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  jobId     Int?
+  job       Job?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  subtotal  Int
+  discount  Int        @default(0)
+  taxPct    Int        @default(18)
+  tax       Int
+  total     Int
+  paid      Boolean    @default(false)
+  notes     String?
+  createdAt DateTime   @default(now())
+  items     BillItem[]
+
+  @@index([userId])
+  @@index([vehicleId])
+}
+
+model BillItem {
+  id          Int    @id @default(autoincrement())
+  billId      Int
+  bill        Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  description String
+  category    String @default("Repairing")
+  qty         Int    @default(1)
+  unitPrice   Int
+}
