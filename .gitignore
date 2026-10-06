@@ -9,3 +9,5 @@ out
 auth
 auth-wal
 auth-shm
+.vercel
+.env*
