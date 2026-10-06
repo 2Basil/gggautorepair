@@ -1,4 +1,4 @@
-# PitStop Garage — car service website
+# GGG Auto Repair — car service website
 
 A complete website for a single garage: customers register, add vehicles, describe a problem, see an estimated spend, track the job live (Booked → Repairing → Repaired → Testing → Ready → Delivered) and get digital bills. The owner has a separate portal with analytics, searchable records and a bill generator.
 

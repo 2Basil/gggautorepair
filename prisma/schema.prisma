@@ -1,4 +1,4 @@
-// PitStop Garage — database schema (SQLite via Prisma)
+// GGG Auto Repair — database schema (SQLite via Prisma)
 // Enums are stored as plain strings (see lib/config.js) so the schema works on SQLite and Postgres alike.
 
 generator client {
