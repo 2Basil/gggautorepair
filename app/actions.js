@@ -1,6 +1,6 @@
 "use server";
 
-import { SHOW_PRICES } from "@/lib/settings";
+import { SHOW_PRICES, REQUIRE_VERIFICATION } from "@/lib/settings";
 
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
@@ -61,7 +61,7 @@ export async function registerCustomer(_prev, fd) {
   const password = String(f.password || "");
   if (!name || !email.includes("@") || phone.length < 9) return { error: "Please fill in your name, a valid email and phone number." };
   const channel = otpChannel();
-  if (!(await isVerified(channel === "email" ? email : phone))) return { error: channel === "email" ? "Please verify your email with the code we send you first." : "Please verify your mobile number with the OTP first." };
+  if (REQUIRE_VERIFICATION && !(await isVerified(channel === "email" ? email : phone))) return { error: channel === "email" ? "Please verify your email with the code we send you first." : "Please verify your mobile number with the OTP first." };
   if (password.length < 6) return { error: "Password must be at least 6 characters." };
   const vehicle = readVehicle(f);
   const ve = vehicleError(vehicle);
@@ -76,7 +76,7 @@ export async function registerCustomer(_prev, fd) {
       name,
       email,
       phone,
-      phoneVerified: channel === "phone",
+      phoneVerified: REQUIRE_VERIFICATION && channel === "phone",
       userCode: await uniqueUserCode(name, phone),
       address: s(f.address) || null,
       city: s(f.city) || null,

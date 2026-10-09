@@ -4,20 +4,20 @@ import { startTransition, useActionState, useRef, useState, useTransition } from
 import { registerCustomer, sendPhoneOtp, verifyPhoneOtp } from "@/app/actions";
 import VehicleFields from "@/components/VehicleFields";
 
-export default function RegisterForm({ channel = "email" }) {
+export default function RegisterForm({ channel = "email", verify = true }) {
   const [state, action, pending] = useActionState(registerCustomer, null);
   const [step, setStep] = useState(1);
   const formRef = useRef(null);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const byEmail = channel === "email";
+  const byEmail = verify && channel === "email";
   const target = (byEmail ? email : phone).trim();
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState("");
   const [otpMsg, setOtpMsg] = useState(null); // { type: "err" | "ok", text }
   const [otpBusy, startOtp] = useTransition();
-  const verified = verifiedPhone !== "" && verifiedPhone === target;
+  const verified = !verify || (verifiedPhone !== "" && verifiedPhone === target);
 
   function sendCode() {
     setOtpMsg(null);
@@ -42,7 +42,7 @@ export default function RegisterForm({ channel = "email" }) {
   function next() {
     const inputs = formRef.current.querySelectorAll("#step1 input");
     for (const el of inputs) if (!el.reportValidity()) return;
-    if (!verified) { setOtpMsg({ type: "err", text: byEmail ? "Please verify your email with the code to continue." : "Please verify your mobile number with the OTP to continue." }); return; }
+    if (verify && !verified) { setOtpMsg({ type: "err", text: byEmail ? "Please verify your email with the code to continue." : "Please verify your mobile number with the OTP to continue." }); return; }
     setStep(2);
   }
 
@@ -95,6 +95,8 @@ export default function RegisterForm({ channel = "email" }) {
           <div className={byEmail ? "field" : "field full"}>
             <label htmlFor="phone">Mobile number *</label>
             {byEmail ? (
+              <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={8} required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. (555) 123-4567" />
+            ) : !verify ? (
               <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={8} required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. (555) 123-4567" />
             ) : (
               <>
