@@ -4,34 +4,37 @@ import { startTransition, useActionState, useRef, useState, useTransition } from
 import { registerCustomer, sendPhoneOtp, verifyPhoneOtp } from "@/app/actions";
 import VehicleFields from "@/components/VehicleFields";
 
-export default function RegisterForm() {
+export default function RegisterForm({ channel = "email" }) {
   const [state, action, pending] = useActionState(registerCustomer, null);
   const [step, setStep] = useState(1);
   const formRef = useRef(null);
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const byEmail = channel === "email";
+  const target = (byEmail ? email : phone).trim();
   const [otpSent, setOtpSent] = useState(false);
   const [code, setCode] = useState("");
   const [verifiedPhone, setVerifiedPhone] = useState("");
   const [otpMsg, setOtpMsg] = useState(null); // { type: "err" | "ok", text }
   const [otpBusy, startOtp] = useTransition();
-  const verified = verifiedPhone !== "" && verifiedPhone === phone.trim();
+  const verified = verifiedPhone !== "" && verifiedPhone === target;
 
   function sendCode() {
     setOtpMsg(null);
     startOtp(async () => {
-      const r = await sendPhoneOtp(phone);
+      const r = await sendPhoneOtp(target);
       if (r.error) return setOtpMsg({ type: "err", text: r.error });
       setOtpSent(true);
-      setOtpMsg({ type: "ok", text: r.devCode ? `Dev mode: your code is ${r.devCode}` : `We sent a 6-digit code to ${r.phone}.` });
+      setOtpMsg({ type: "ok", text: r.devCode ? `Dev mode: your code is ${r.devCode}` : `We sent a 6-digit code to ${r.target}. Check your inbox (and spam).` });
     });
   }
   function checkCode() {
     setOtpMsg(null);
     startOtp(async () => {
-      const r = await verifyPhoneOtp(phone, code);
+      const r = await verifyPhoneOtp(target, code);
       if (r.error) return setOtpMsg({ type: "err", text: r.error });
-      setVerifiedPhone(phone.trim());
-      setOtpMsg({ type: "ok", text: "Mobile number verified." });
+      setVerifiedPhone(target);
+      setOtpMsg({ type: "ok", text: byEmail ? "Email verified." : "Mobile number verified." });
     });
   }
   const showStep = state?.error && state.step !== 2 ? 1 : step;
@@ -39,7 +42,7 @@ export default function RegisterForm() {
   function next() {
     const inputs = formRef.current.querySelectorAll("#step1 input");
     for (const el of inputs) if (!el.reportValidity()) return;
-    if (!verified) { setOtpMsg({ type: "err", text: "Please verify your mobile number with the OTP to continue." }); return; }
+    if (!verified) { setOtpMsg({ type: "err", text: byEmail ? "Please verify your email with the code to continue." : "Please verify your mobile number with the OTP to continue." }); return; }
     setStep(2);
   }
 
@@ -66,18 +69,15 @@ export default function RegisterForm() {
             <label htmlFor="name">Full name *</label>
             <input id="name" name="name" autoComplete="name" required />
           </div>
-          <div className="field">
-            <label htmlFor="email">Email *</label>
-            <input id="email" name="email" type="email" autoComplete="email" required />
-          </div>
-          <div className="field full">
-            <label htmlFor="phone">Mobile number *</label>
+          <div className={byEmail ? "field full" : "field"}>
+            <label htmlFor="email">Email *{byEmail ? " (we send a verification code here)" : ""}</label>
+            {byEmail ? (
+              <>
             <div className="row" style={{ gap: 8 }}>
-              <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={8} required value={phone}
-                onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setCode(""); setOtpMsg(null); }} style={{ flex: 1 }} placeholder="e.g. 98765 43210 or +1 555 123 4567" />
+              <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => { setEmail(e.target.value); setOtpSent(false); setCode(""); setOtpMsg(null); }} style={{ flex: 1 }} />
               {verified
                 ? <span className="badge paid" style={{ alignSelf: "center" }}>Verified ✓</span>
-                : <button type="button" className="btn btn-dark btn-sm" onClick={sendCode} disabled={otpBusy || phone.trim().length < 8}>{otpSent ? "Resend" : "Send OTP"}</button>}
+                : <button type="button" className="btn btn-dark btn-sm" onClick={sendCode} disabled={otpBusy || target.length < 6}>{otpSent ? "Resend" : "Send code"}</button>}
             </div>
             {otpSent && !verified && (
               <div className="row" style={{ gap: 8, marginTop: 8 }}>
@@ -86,7 +86,34 @@ export default function RegisterForm() {
                 <button type="button" className="btn btn-primary btn-sm" onClick={checkCode} disabled={otpBusy || code.length < 4}>Verify</button>
               </div>
             )}
-            {otpMsg && <div className={`tiny ${otpMsg.type === "err" ? "" : "muted"}`} style={{ marginTop: 6, color: otpMsg.type === "err" ? "var(--accent)" : undefined }}>{otpMsg.text}</div>}
+            {otpMsg && <div className="tiny" style={{ marginTop: 6, color: otpMsg.type === "err" ? "var(--accent)" : "var(--muted)" }}>{otpMsg.text}</div>}
+              </>
+            ) : (
+              <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            )}
+          </div>
+          <div className={byEmail ? "field" : "field full"}>
+            <label htmlFor="phone">Mobile number *</label>
+            {byEmail ? (
+              <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={8} required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. (555) 123-4567" />
+            ) : (
+              <>
+            <div className="row" style={{ gap: 8 }}>
+              <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={8} required value={phone} onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setCode(""); setOtpMsg(null); }} style={{ flex: 1 }} placeholder="e.g. (555) 123-4567" />
+              {verified
+                ? <span className="badge paid" style={{ alignSelf: "center" }}>Verified ✓</span>
+                : <button type="button" className="btn btn-dark btn-sm" onClick={sendCode} disabled={otpBusy || target.length < 6}>{otpSent ? "Resend" : "Send code"}</button>}
+            </div>
+            {otpSent && !verified && (
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6-digit code" value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} style={{ flex: 1 }} />
+                <button type="button" className="btn btn-primary btn-sm" onClick={checkCode} disabled={otpBusy || code.length < 4}>Verify</button>
+              </div>
+            )}
+            {otpMsg && <div className="tiny" style={{ marginTop: 6, color: otpMsg.type === "err" ? "var(--accent)" : "var(--muted)" }}>{otpMsg.text}</div>}
+              </>
+            )}
           </div>
           <div className="field">
             <label htmlFor="city">City</label>

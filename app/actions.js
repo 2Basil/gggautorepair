@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { createSession, destroySession, getUser, requireOwner, requireUser } from "@/lib/auth";
-import { sendOtp, checkOtp, isPhoneVerified, normalizePhone } from "@/lib/otp";
+import { sendOtp, checkOtp, isVerified, otpChannel, normalizePhone } from "@/lib/otp";
 import { uniqueUserCode } from "@/lib/userCode";
 import { predict } from "@/lib/pricing";
 import { learnFromBill, loadSamples } from "@/lib/learn";
@@ -45,12 +45,12 @@ function vehicleError(v) {
 
 /* ---------------------------------- auth ---------------------------------- */
 
-export async function sendPhoneOtp(phone) {
-  return await sendOtp(phone);
+export async function sendPhoneOtp(contact) {
+  return await sendOtp(contact);
 }
 
-export async function verifyPhoneOtp(phone, code) {
-  return await checkOtp(phone, code);
+export async function verifyPhoneOtp(contact, code) {
+  return await checkOtp(contact, code);
 }
 
 export async function registerCustomer(_prev, fd) {
@@ -60,7 +60,8 @@ export async function registerCustomer(_prev, fd) {
   const phone = normalizePhone(f.phone);
   const password = String(f.password || "");
   if (!name || !email.includes("@") || phone.length < 9) return { error: "Please fill in your name, a valid email and phone number." };
-  if (!(await isPhoneVerified(phone))) return { error: "Please verify your mobile number with the OTP first." };
+  const channel = otpChannel();
+  if (!(await isVerified(channel === "email" ? email : phone))) return { error: channel === "email" ? "Please verify your email with the code we send you first." : "Please verify your mobile number with the OTP first." };
   if (password.length < 6) return { error: "Password must be at least 6 characters." };
   const vehicle = readVehicle(f);
   const ve = vehicleError(vehicle);
@@ -75,7 +76,7 @@ export async function registerCustomer(_prev, fd) {
       name,
       email,
       phone,
-      phoneVerified: true,
+      phoneVerified: channel === "phone",
       userCode: await uniqueUserCode(name, phone),
       address: s(f.address) || null,
       city: s(f.city) || null,
