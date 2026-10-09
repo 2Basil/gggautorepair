@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { VEHICLE_TYPES } from "@/lib/config";
@@ -7,6 +8,7 @@ import { ledgerWhere } from "@/lib/ledger";
 export const dynamic = "force-dynamic";
 
 export default async function Ledger({ searchParams }) {
+  await requireOwner();
   const sp = await searchParams;
   const { where, type, q, from, to } = ledgerWhere(sp);
   const rows = await db.billItem.findMany({

@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { CATEGORIES, VEHICLE_TYPES } from "@/lib/config";
@@ -6,6 +7,7 @@ import { savePrices, fillPrices, createService } from "@/app/actions";
 export const dynamic = "force-dynamic";
 
 export default async function Pricing({ searchParams }) {
+  await requireOwner();
   const sp = await searchParams;
   const type = VEHICLE_TYPES[sp.type] ? sp.type : "HATCHBACK";
   const [services, prices, counts] = await Promise.all([

@@ -2,7 +2,8 @@
 //   node prisma/owner-setup.js
 // 1. creates the ServicePrice table (owner-set prices per vehicle type)
 // 2. fills empty prices for every service x vehicle type from the base price (owner edits them in the portal)
-// 3. creates / updates the owner login and removes owner rights from the old demo owner
+// 3. adds the staff-login column (User.empId)
+// 4. creates / updates the owner login and removes owner rights from the old demo owner
 // Owner email/password come from OWNER_EMAIL / OWNER_PASSWORD in .env; if not set the defaults below are used.
 // The password is only set when the owner account is first created - after that the owner changes it in Settings.
 require("dotenv/config");
@@ -30,6 +31,11 @@ async function main() {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS "ServicePrice_serviceId_vehicleType_key" ON "ServicePrice"("serviceId", "vehicleType");
   `);
+
+  // staff logins: User.empId
+  const ucols = (await c.execute('PRAGMA table_info("User")')).rows.map((r) => r.name);
+  if (!ucols.includes("empId")) await c.execute('ALTER TABLE "User" ADD COLUMN "empId" TEXT');
+  await c.execute('CREATE UNIQUE INDEX IF NOT EXISTS "User_empId_key" ON "User"("empId")');
 
   const services = (await c.execute('SELECT "id","basePrice" FROM "Service"')).rows;
   const have = new Set((await c.execute('SELECT "serviceId","vehicleType" FROM "ServicePrice"')).rows.map((r) => r.serviceId + ":" + r.vehicleType));

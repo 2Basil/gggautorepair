@@ -35,9 +35,9 @@ export default async function Header() {
         <div className="header-actions">
           {user ? (
             <>
-              {user.role === "OWNER" && (
+              {(user.role === "OWNER" || user.role === "EMPLOYEE") && (
                 <Link href="/owner" className="btn btn-dark btn-sm">
-                  <Icon name="key" size={16} /> Owner Portal
+                  <Icon name="key" size={16} /> {user.role === "OWNER" ? "Owner Portal" : "Staff Portal"}
                 </Link>
               )}
               <form action={logout}>

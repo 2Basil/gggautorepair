@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/auth";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { STATUS_LABEL, STEPS } from "@/lib/config";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default async function OwnerHome() {
+  await requireOwner();
   const now = new Date();
   const [bills, billItems, jobs, customers, vehicles, subs, recentJobs] = await Promise.all([
     db.bill.findMany({ select: { total: true, paid: true, createdAt: true } }),

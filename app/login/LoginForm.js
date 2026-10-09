@@ -10,8 +10,8 @@ export default function LoginForm({ next }) {
       {state?.error && <div className="alert err">{state.error}</div>}
       <input type="hidden" name="next" value={next} />
       <div className="field">
-        <label htmlFor="email">Email</label>
-        <input id="email" name="email" type="email" autoComplete="email" required />
+        <label htmlFor="email">Email or Employee ID</label>
+        <input id="email" name="email" type="text" autoComplete="username" autoCapitalize="none" required />
       </div>
       <div className="field">
         <label htmlFor="password">Password</label>

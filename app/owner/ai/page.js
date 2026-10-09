@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { VEHICLE_TYPES } from "@/lib/config";
 import { fmtDate, money } from "@/lib/format";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 const mult = (t) => (VEHICLE_TYPES[t] || VEHICLE_TYPES.HATCHBACK).multiplier;
 
 export default async function AiPricing({ searchParams }) {
+  await requireOwner();
   const sp = await searchParams;
   let samples = [], missing = false, unlearned = 0;
   try {

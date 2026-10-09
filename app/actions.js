@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { createSession, destroySession, getUser, requireOwner, requireUser } from "@/lib/auth";
+import { createSession, destroySession, getUser, requireOwner, requireStaff, requireUser } from "@/lib/auth";
 import { sendOtp, checkOtp, isVerified, otpChannel, normalizePhone } from "@/lib/otp";
 import { uniqueUserCode } from "@/lib/userCode";
 import { predict } from "@/lib/pricing";
@@ -89,14 +89,16 @@ export async function registerCustomer(_prev, fd) {
 }
 
 export async function login(_prev, fd) {
-  const email = s(fd.get("email")).toLowerCase();
+  const id = s(fd.get("email")).toLowerCase();
   const password = String(fd.get("password") || "");
   const next = s(fd.get("next"));
-  const user = await db.user.findUnique({ where: { email } });
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) return { error: "Incorrect email or password." };
+  // owners and customers log in with their email, employees with their employee ID
+  const user = id.includes("@") ? await db.user.findUnique({ where: { email: id } }) : await db.user.findUnique({ where: { empId: id } });
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) return { error: "Incorrect ID/email or password." };
   await createSession(user);
-  if (next.startsWith("/") && !next.startsWith("//")) redirect(next);
-  redirect(user.role === "OWNER" ? "/owner" : "/dashboard");
+  const staff = user.role === "OWNER" || user.role === "EMPLOYEE";
+  if (next.startsWith("/") && !next.startsWith("//") && (staff || !next.startsWith("/owner"))) redirect(next);
+  redirect(staff ? "/owner" : "/dashboard");
 }
 
 export async function logout() {
@@ -110,7 +112,7 @@ export async function joinAsOwner() {
 }
 
 export async function changePassword(_prev, fd) {
-  const me = await requireOwner();
+  const me = await requireStaff();
   const cur = String(fd.get("current") || "");
   const next = String(fd.get("next") || "");
   const again = String(fd.get("again") || "");
@@ -121,6 +123,42 @@ export async function changePassword(_prev, fd) {
   if (next === cur) return { error: "Choose a password different from the current one." };
   await db.user.update({ where: { id: me.id }, data: { passwordHash: await bcrypt.hash(next, 10) } });
   return { ok: "Password changed. Use the new password next time you log in." };
+}
+
+/* ------------------------------- employees ------------------------------- */
+
+export async function addEmployee(_prev, fd) {
+  await requireOwner();
+  const name = s(fd.get("name"));
+  const empId = s(fd.get("empId")).toLowerCase();
+  const password = String(fd.get("password") || "");
+  if (!name) return { error: "Enter the employee's name." };
+  if (!/^[a-z0-9._-]{3,24}$/.test(empId)) return { error: "Employee ID must be 3-24 characters: letters, numbers, dot, dash or underscore (no spaces, no @)." };
+  if (password.length < 6) return { error: "Password must be at least 6 characters." };
+  if (await db.user.findUnique({ where: { empId } })) return { error: "That Employee ID is already taken." };
+  await db.user.create({
+    data: { name, empId, email: `${empId}@staff.local`, phone: "-", passwordHash: await bcrypt.hash(password, 10), role: "EMPLOYEE" },
+  });
+  revalidatePath("/owner/employees");
+  return { ok: `Added ${name}. They log in at /login with ID "${empId}" and the password you set.` };
+}
+
+export async function resetEmployeePassword(fd) {
+  await requireOwner();
+  const id = int(fd.get("id"));
+  const password = String(fd.get("password") || "");
+  const emp = await db.user.findUnique({ where: { id } });
+  if (!emp || emp.role !== "EMPLOYEE" || password.length < 6) redirect("/owner/employees?error=password");
+  await db.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
+  redirect("/owner/employees?reset=1");
+}
+
+export async function removeEmployee(fd) {
+  await requireOwner();
+  const id = int(fd.get("id"));
+  const emp = await db.user.findUnique({ where: { id } });
+  if (emp && emp.role === "EMPLOYEE") await db.user.delete({ where: { id } });
+  revalidatePath("/owner/employees");
 }
 
 export async function savePrices(fd) {
@@ -266,7 +304,7 @@ export async function cancelSubscription(fd) {
 /* ---------------------------------- owner ---------------------------------- */
 
 export async function updateJobStatus(fd) {
-  await requireOwner();
+  await requireStaff();
   const id = int(fd.get("jobId"));
   const status = s(fd.get("status"));
   if (!STATUS_KEYS.includes(status)) return;
@@ -279,7 +317,7 @@ export async function updateJobStatus(fd) {
 }
 
 export async function addJobItem(fd) {
-  await requireOwner();
+  await requireStaff();
   const jobId = int(fd.get("jobId"));
   const description = s(fd.get("description"));
   const unitPrice = int(fd.get("unitPrice"));
@@ -291,7 +329,7 @@ export async function addJobItem(fd) {
 }
 
 export async function removeJobItem(fd) {
-  await requireOwner();
+  await requireStaff();
   const id = int(fd.get("id"));
   const item = await db.jobItem.findUnique({ where: { id } });
   if (!item) return;
@@ -300,7 +338,7 @@ export async function removeJobItem(fd) {
 }
 
 export async function createBill(payload) {
-  const owner = await requireOwner();
+  const owner = await requireStaff();
   const userId = int(payload.userId);
   const vehicleId = int(payload.vehicleId);
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } });
@@ -351,7 +389,7 @@ export async function createBill(payload) {
 }
 
 export async function toggleBillPaid(fd) {
-  await requireOwner();
+  await requireStaff();
   const id = int(fd.get("id"));
   const bill = await db.bill.findUnique({ where: { id } });
   if (!bill) return;

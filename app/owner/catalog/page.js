@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CATEGORIES } from "@/lib/config";
 import { updateService, createService } from "@/app/actions";
@@ -5,6 +6,7 @@ import { updateService, createService } from "@/app/actions";
 export const dynamic = "force-dynamic";
 
 export default async function Catalog() {
+  await requireOwner();
   const services = await db.service.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }] });
   return (
     <>

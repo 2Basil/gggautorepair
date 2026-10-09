@@ -16,6 +16,7 @@ model User {
   email         String         @unique
   phone         String
   phoneVerified Boolean        @default(false)
+  empId         String?        @unique // login ID for staff (role EMPLOYEE)
   userCode      String?        @unique // public customer ID, e.g. ZZZ-AAR-4321-K7
   address       String?
   city          String?
