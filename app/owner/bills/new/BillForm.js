@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createBill } from "@/app/actions";
 import { CATEGORIES } from "@/lib/config";
-import { billTotals, inr } from "@/lib/format";
+import { billTotals, money } from "@/lib/format";
 
 export default function BillForm({ customers, services, prefill, defaultTax }) {
   const router = useRouter();
@@ -24,9 +24,11 @@ export default function BillForm({ customers, services, prefill, defaultTax }) {
   function setItem(i, patch) {
     setItems((arr) => arr.map((it, k) => (k === i ? { ...it, ...patch } : it)));
   }
+  const vehicleType = customer?.vehicles.find((v) => v.id === Number(vehicleId))?.type;
+  const priceFor = (s) => s.prices?.[vehicleType] ?? s.price; // owner price for this vehicle type, else base price
   function addFromCatalog(e) {
     const s = services.find((x) => x.id === Number(e.target.value));
-    if (s) setItems((arr) => [...arr.filter((a) => a.description || a.unitPrice), { description: s.name, category: s.category, qty: 1, unitPrice: s.price }]);
+    if (s) setItems((arr) => [...arr.filter((a) => a.description || a.unitPrice), { description: s.name, category: s.category, qty: 1, unitPrice: priceFor(s) }]);
     e.target.value = "";
   }
   function changeCustomer(id) {
@@ -73,7 +75,7 @@ export default function BillForm({ customers, services, prefill, defaultTax }) {
               <option value="">+ Add from service catalogue…</option>
               {CATEGORIES.map((cat) => (
                 <optgroup key={cat} label={cat}>
-                  {services.filter((s) => s.category === cat).map((s) => <option key={s.id} value={s.id}>{s.name} — {inr(s.price)}</option>)}
+                  {services.filter((s) => s.category === cat).map((s) => <option key={s.id} value={s.id}>{s.name} — {money(priceFor(s))}</option>)}
                 </optgroup>
               ))}
             </select>
@@ -83,8 +85,8 @@ export default function BillForm({ customers, services, prefill, defaultTax }) {
               <input value={it.description} placeholder="Description" onChange={(e) => setItem(i, { description: e.target.value })} />
               <select value={it.category} onChange={(e) => setItem(i, { category: e.target.value })}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
               <input type="number" min="1" value={it.qty} onChange={(e) => setItem(i, { qty: e.target.value })} />
-              <input type="number" min="0" placeholder="Rate ₹" value={it.unitPrice} onChange={(e) => setItem(i, { unitPrice: e.target.value })} />
-              <span className="mono small right">{inr((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))}</span>
+              <input type="number" min="0" placeholder="Rate $" value={it.unitPrice} onChange={(e) => setItem(i, { unitPrice: e.target.value })} />
+              <span className="mono small right">{money((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))}</span>
               <button type="button" className="btn-link danger" onClick={() => setItems((a) => a.filter((_, k) => k !== i))} aria-label="Remove">✕</button>
             </div>
           ))}
@@ -99,21 +101,21 @@ export default function BillForm({ customers, services, prefill, defaultTax }) {
         </div>
       </div>
 
-      <div className="card" style={{ position: "sticky", top: 86 }}>
+      <div className="card bill-summary">
         <h3>Summary</h3>
         <div className="totals" style={{ width: "100%" }}>
-          <div><span>Subtotal</span><span className="mono">{inr(totals.subtotal)}</span></div>
-          <div><span>Discount</span><span className="mono">− {inr(totals.discount)}</span></div>
-          <div><span>GST ({taxPct}%)</span><span className="mono">{inr(totals.tax)}</span></div>
-          <div className="grand"><span>Total</span><span>{inr(totals.total)}</span></div>
+          <div><span>Subtotal</span><span className="mono">{money(totals.subtotal)}</span></div>
+          <div><span>Discount</span><span className="mono">− {money(totals.discount)}</span></div>
+          <div><span>Tax ({taxPct}%)</span><span className="mono">{money(totals.tax)}</span></div>
+          <div className="grand"><span>Total</span><span>{money(totals.total)}</span></div>
         </div>
         <div className="form-grid" style={{ marginTop: 16 }}>
           <div className="field">
-            <label>Discount ₹</label>
+            <label>Discount $</label>
             <input type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
           </div>
           <div className="field">
-            <label>GST %</label>
+            <label>Tax %</label>
             <input type="number" min="0" max="40" value={taxPct} onChange={(e) => setTaxPct(e.target.value)} />
           </div>
         </div>

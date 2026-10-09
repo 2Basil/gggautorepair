@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import ShareBill from "@/components/ShareBill";
 import BillView from "@/components/BillView";
 import { toggleBillPaid } from "@/app/actions";
 
@@ -19,6 +20,7 @@ export default async function OwnerBill({ params }) {
         <Link href="/owner/bills" className="btn btn-ghost btn-sm">← All bills</Link>
         <div className="row">
           <span className="muted small">Visible to {bill.user.name} in “My bills”.</span>
+          <ShareBill bill={bill} user={bill.user} vehicle={bill.vehicle} />
           <form action={toggleBillPaid}>
             <input type="hidden" name="id" value={bill.id} />
             <button className={`btn btn-sm ${bill.paid ? "btn-ghost" : "btn-primary"}`}>{bill.paid ? "Mark as unpaid" : "Mark as paid"}</button>

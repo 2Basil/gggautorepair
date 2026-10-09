@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { STATUS_LABEL, STEPS } from "@/lib/config";
-import { fmtDate, inr, prettyReg } from "@/lib/format";
+import { fmtDate, money, prettyReg } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -67,8 +67,8 @@ export default async function OwnerHome() {
       </div>
 
       <div className="grid grid-4" style={{ marginBottom: 18 }}>
-        <div className="card kpi"><div className="label">Revenue this month</div><div className="value">{inr(thisMonth)}</div><div className="sub">All time {inr(total)}</div></div>
-        <div className="card kpi"><div className="label">Outstanding</div><div className="value">{inr(due)}</div><div className="sub">{bills.filter((b) => !b.paid).length} unpaid bills</div></div>
+        <div className="card kpi"><div className="label">Revenue this month</div><div className="value">{money(thisMonth)}</div><div className="sub">All time {money(total)}</div></div>
+        <div className="card kpi"><div className="label">Outstanding</div><div className="value">{money(due)}</div><div className="sub">{bills.filter((b) => !b.paid).length} unpaid bills</div></div>
         <div className="card kpi"><div className="label">Active jobs</div><div className="value">{active}</div><div className="sub">{jobs.length} jobs overall</div></div>
         <div className="card kpi"><div className="label">Customers</div><div className="value">{customers}</div><div className="sub">{vehicles.length} vehicles · {subs.length} active plans</div></div>
       </div>
@@ -79,7 +79,7 @@ export default async function OwnerHome() {
           <div className="bars">
             {months.map((m) => (
               <div className="bar-col" key={m.key}>
-                <b>{m.total ? inr(Math.round(m.total / 1000)) + "k" : "–"}</b>
+                <b>{m.total ? money(Math.round(m.total / 1000)) + "k" : "–"}</b>
                 <div className="bar" style={{ height: `${(m.total / maxM) * 100 * 0.78}%` }} />
                 <span>{m.label}</span>
               </div>
@@ -93,11 +93,11 @@ export default async function OwnerHome() {
             <div className="hbar" key={name}>
               <span className="name">{name}</span>
               <div className="track"><div className="fill" style={{ width: `${(v / catMax) * 100}%` }} /></div>
-              <b className="mono">{inr(v)}</b>
+              <b className="mono">{money(v)}</b>
             </div>
           ))}
           <hr className="divider" />
-          <div className="muted small">Plan subscriptions add roughly <b>{inr(subRevenue)}</b> per month in recurring revenue.</div>
+          <div className="muted small">Plan subscriptions add roughly <b>{money(subRevenue)}</b> per month in recurring revenue.</div>
         </div>
       </div>
 
@@ -108,7 +108,7 @@ export default async function OwnerHome() {
             <div className="hbar" key={name}>
               <span className="name" title={name}>{name}</span>
               <div className="track"><div className="fill" style={{ width: `${(v / svcMax) * 100}%`, background: "var(--accent)" }} /></div>
-              <b className="mono">{inr(v)}</b>
+              <b className="mono">{money(v)}</b>
             </div>
           ))}
         </div>

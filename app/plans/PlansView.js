@@ -1,9 +1,10 @@
 "use client";
 
+import { SHOW_PRICES } from "@/lib/settings";
 import { useState } from "react";
 import Link from "next/link";
 import { subscribePlan } from "@/app/actions";
-import { inr } from "@/lib/format";
+import { money } from "@/lib/format";
 import Icon from "@/components/Icon";
 
 export default function PlansView({ plans, vehicles, loggedIn }) {
@@ -24,8 +25,8 @@ export default function PlansView({ plans, vehicles, loggedIn }) {
           <div key={p.id} className={`card plan ${p.popular ? "popular" : ""}`}>
             {p.popular && <span className="tag">MOST POPULAR</span>}
             <h3>{p.name}</h3>
-            <div className="price">{inr(p.price)}<small> / {period === "YEARLY" ? "year" : "month"}</small></div>
-            {period === "YEARLY" && <div className="tiny muted">That is {inr(Math.round(p.price / 12))} a month</div>}
+            {SHOW_PRICES.plans && <div className="price">{money(p.price)}<small> / {period === "YEARLY" ? "year" : "month"}</small></div>}
+            {SHOW_PRICES.plans && period === "YEARLY" && <div className="tiny muted">That is {money(Math.round(p.price / 12))} a month</div>}
             <ul>
               {p.perks.map((x) => (
                 <li key={x}><Icon name="check" size={16} stroke={2.4} /> {x}</li>

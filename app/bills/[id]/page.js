@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { SHOW_PRICES } from "@/lib/settings";
 import BillView from "@/components/BillView";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function BillPage({ params }) {
       <div className="no-print" style={{ marginBottom: 16 }}>
         <Link href="/bills" className="btn btn-ghost btn-sm">← All bills</Link>
       </div>
-      <BillView bill={bill} />
+      <BillView bill={bill} showPrices={SHOW_PRICES.customerBills} />
     </div>
   );
 }

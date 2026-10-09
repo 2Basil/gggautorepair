@@ -17,6 +17,11 @@ const db =
       })
     : new PrismaClient();
 
+// Prices below were written on a rupee scale; they are stored in US dollars.
+// Change USD_RATE (dollars per old unit) if you want a different conversion.
+const USD_RATE = 0.05;
+const usd = (n) => { const v = n * USD_RATE; return v < 50 ? Math.max(5, Math.round(v)) : Math.round(v / 5) * 5; };
+
 const SERVICES = [
   // Repairing
   ["Inspection & Diagnostics", "Repairing", "Computer scan and 21-point check to find the root cause.", 600, "check,inspect,inspection,diagnose,diagnostic,problem,issue,fault,scan,warning light,check engine"],
@@ -68,14 +73,14 @@ async function main() {
   // ---- catalogue (idempotent) ----
   if ((await db.service.count()) === 0) {
     await db.service.createMany({
-      data: SERVICES.map(([name, category, description, basePrice, keywords]) => ({ name, category, description, basePrice, keywords })),
+      data: SERVICES.map(([name, category, description, basePrice, keywords]) => ({ name, category, description, basePrice: usd(basePrice), keywords })),
     });
   }
   for (const [tier, name, period, price, popular, perks] of PLANS) {
     await db.plan.upsert({
       where: { tier_period: { tier, period } },
-      update: { name, price, popular, perks: perks.join("\n") },
-      create: { tier, name, period, price, popular, perks: perks.join("\n") },
+      update: { name, price: usd(price), popular, perks: perks.join("\n") },
+      create: { tier, name, period, price: usd(price), popular, perks: perks.join("\n") },
     });
   }
 
@@ -138,7 +143,7 @@ async function main() {
     const m = mult[v.type];
     const items = names.map((n) => {
       const s = svc[n];
-      return { description: s.name, category: s.category, qty: 1, unitPrice: Math.round((s.basePrice * m * 1.05) / 10) * 10 };
+      return { description: s.name, category: s.category, qty: 1, unitPrice: Math.round(s.basePrice * m * 1.05) };
     });
     const min = items.reduce((a, i) => a + Math.round(i.unitPrice * 0.86), 0);
     const max = items.reduce((a, i) => a + Math.round(i.unitPrice * 1.19), 0);

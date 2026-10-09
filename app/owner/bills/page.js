@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { fmtDate, inr, prettyReg } from "@/lib/format";
+import ShareBill from "@/components/ShareBill";
+import { fmtDate, money, prettyReg } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +12,15 @@ export default async function OwnerBills() {
     <>
       <div className="page-head">
         <div>
-          <span className="eyebrow">Owner portal</span>
+          <span className="eyebrow">Owner portal · 3</span>
           <h1>Bills</h1>
-          <div className="muted">Outstanding: <b>{inr(due)}</b></div>
+          <div className="muted">Outstanding: <b>{money(due)}</b></div>
         </div>
         <Link href="/owner/bills/new" className="btn btn-primary">Generate new bill</Link>
       </div>
       <div className="table-wrap">
         <table className="tbl">
-          <thead><tr><th>Bill</th><th>Date</th><th>Customer</th><th>Vehicle</th><th className="num">Total</th><th>Status</th><th /></tr></thead>
+          <thead><tr><th>Bill</th><th>Date</th><th>Customer</th><th>Vehicle</th><th className="num">Total</th><th>Status</th><th>Share</th><th /></tr></thead>
           <tbody>
             {bills.map((b) => (
               <tr key={b.id}>
@@ -27,8 +28,9 @@ export default async function OwnerBills() {
                 <td>{fmtDate(b.createdAt)}</td>
                 <td>{b.user.name}</td>
                 <td><span className="reg">{prettyReg(b.vehicle.regNo)}</span></td>
-                <td className="num mono"><b>{inr(b.total)}</b></td>
+                <td className="num mono"><b>{money(b.total)}</b></td>
                 <td><span className={`badge ${b.paid ? "paid" : "unpaid"}`}>{b.paid ? "Paid" : "Due"}</span></td>
+                <td><ShareBill bill={b} user={b.user} vehicle={b.vehicle} /></td>
                 <td className="right"><Link href={`/owner/bills/${b.id}`} className="btn btn-ghost btn-sm">Open</Link></td>
               </tr>
             ))}

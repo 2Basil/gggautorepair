@@ -33,7 +33,7 @@ export default async function Access({ searchParams }) {
         </div>
         <div className="card">
           <h3>Owner sign-up link</h3>
-          <p className="muted small">Share <b>/owner-join</b> together with the access code that is set as <code>OWNER_ACCESS_CODE</code> in your <code>.env</code> file. Anyone with the code can create an owner account, so keep it private and change it when staff leave.</p>
+          <p className="muted small">Owner accounts cannot be created from the website any more. To add another owner, enter the email of an existing customer above and grant access; they log in on the normal login page.</p>
         </div>
       </div>
 

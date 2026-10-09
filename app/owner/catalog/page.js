@@ -21,7 +21,7 @@ export default async function Catalog() {
         <form action={createService} className="form-grid">
           <div className="field"><label>Name</label><input name="name" required /></div>
           <div className="field"><label>Category</label><select name="category">{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></div>
-          <div className="field"><label>Base price ₹</label><input name="basePrice" type="number" min="0" required /></div>
+          <div className="field"><label>Base price $</label><input name="basePrice" type="number" min="0" required /></div>
           <div className="field"><label>Keywords (comma separated)</label><input name="keywords" placeholder="brake, squeal, pedal" /></div>
           <div className="field full"><label>Description</label><input name="description" /></div>
           <div className="full"><button className="btn btn-dark">Add service</button></div>
@@ -29,14 +29,14 @@ export default async function Catalog() {
       </div>
 
       <div className="table-wrap">
-        <table className="tbl">
-          <thead><tr><th>Category</th><th>Service</th><th>Base ₹</th><th>Keywords</th><th>Active</th><th /></tr></thead>
+        <table className="tbl catalog">
+          <thead><tr><th>Category</th><th>Service</th><th>Base $</th><th>Keywords</th><th>Active</th><th /></tr></thead>
           <tbody>
             {services.map((s) => (
               <tr key={s.id}>
                 <td className="muted">{s.category}</td>
                 <td colSpan={5} style={{ padding: 0 }}>
-                  <form action={updateService} style={{ display: "grid", gridTemplateColumns: "2fr 110px 3fr 70px 80px", gap: 8, alignItems: "center", padding: "8px 14px" }}>
+                  <form action={updateService} className="svc-row">
                     <input type="hidden" name="id" value={s.id} />
                     <input name="name" defaultValue={s.name} />
                     <input name="basePrice" type="number" min="0" defaultValue={s.basePrice} />

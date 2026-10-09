@@ -1,8 +1,8 @@
 import { GARAGE } from "@/lib/config";
-import { fmtDate, inr, prettyReg } from "@/lib/format";
+import { fmtDate, money, prettyReg } from "@/lib/format";
 import PrintButton from "./PrintButton";
 
-export default function BillView({ bill }) {
+export default function BillView({ bill, showPrices = true }) {
   return (
     <div>
       <div className="bill">
@@ -12,7 +12,7 @@ export default function BillView({ bill }) {
             <h1>{GARAGE.name}</h1>
             <div className="muted small">{GARAGE.address}</div>
             <div className="muted small">{GARAGE.phone} · {GARAGE.email}</div>
-            {GARAGE.gstin && <div className="muted small">GSTIN: {GARAGE.gstin}</div>}
+            {GARAGE.gstin && <div className="muted small">Tax ID: {GARAGE.gstin}</div>}
           </div>
           <div className="right">
             <div className="eyebrow" style={{ margin: 0 }}>Tax invoice</div>
@@ -36,9 +36,10 @@ export default function BillView({ bill }) {
           </div>
         </div>
 
+        <div className="table-scroll">
         <table className="tbl">
           <thead>
-            <tr><th>#</th><th>Description</th><th>Category</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Amount</th></tr>
+            <tr><th>#</th><th>Description</th><th>Category</th><th className="num">Qty</th>{showPrices && <th className="num">Rate</th>}{showPrices && <th className="num">Amount</th>}</tr>
           </thead>
           <tbody>
             {bill.items.map((i, k) => (
@@ -47,19 +48,22 @@ export default function BillView({ bill }) {
                 <td>{i.description}</td>
                 <td className="muted">{i.category}</td>
                 <td className="num">{i.qty}</td>
-                <td className="num mono">{inr(i.unitPrice)}</td>
-                <td className="num mono">{inr(i.qty * i.unitPrice)}</td>
+                {showPrices && <td className="num mono">{money(i.unitPrice)}</td>}
+                {showPrices && <td className="num mono">{money(i.qty * i.unitPrice)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
-
-        <div className="totals">
-          <div><span>Subtotal</span><span className="mono">{inr(bill.subtotal)}</span></div>
-          {bill.discount > 0 && <div><span>Discount</span><span className="mono">− {inr(bill.discount)}</span></div>}
-          <div><span>GST ({bill.taxPct}%)</span><span className="mono">{inr(bill.tax)}</span></div>
-          <div className="grand"><span>Total</span><span>{inr(bill.total)}</span></div>
         </div>
+
+        {showPrices && (
+        <div className="totals">
+          <div><span>Subtotal</span><span className="mono">{money(bill.subtotal)}</span></div>
+          {bill.discount > 0 && <div><span>Discount</span><span className="mono">− {money(bill.discount)}</span></div>}
+          <div><span>Tax ({bill.taxPct}%)</span><span className="mono">{money(bill.tax)}</span></div>
+          <div className="grand"><span>Total</span><span>{money(bill.total)}</span></div>
+        </div>
+        )}
 
         {bill.notes && <p className="muted small" style={{ marginTop: 20 }}><b>Notes:</b> {bill.notes}</p>}
         <p className="muted tiny" style={{ marginTop: 24 }}>Thank you for choosing {GARAGE.name}. Payment status: {bill.paid ? "Paid" : "Due at the garage"}.</p>

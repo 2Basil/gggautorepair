@@ -54,7 +54,7 @@ export default async function Header() {
           )}
           <details className="nav-mobile">
             <summary aria-label="Menu"><Icon name="menu" size={22} /></summary>
-            <div className="nav-mobile-panel">{links}</div>
+            <div className="nav-mobile-panel">{links}{!user && <Link href="/login">Log in</Link>}</div>
           </details>
         </div>
       </div>

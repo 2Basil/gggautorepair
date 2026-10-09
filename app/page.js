@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { getUser } from "@/lib/auth";
-import { CATEGORIES, CATEGORY_BLURB, GARAGE } from "@/lib/config";
-import { inr } from "@/lib/format";
+import { CATEGORIES, CATEGORY_BLURB, GARAGE, VEHICLE_TYPES } from "@/lib/config";
+import { money } from "@/lib/format";
+import { SHOW_PRICES } from "@/lib/settings";
+import HomeServices from "@/components/HomeServices";
 import CarAssembly from "@/components/CarAssembly";
 import Icon from "@/components/Icon";
 
@@ -12,11 +14,24 @@ const CAT_QUERY = { Repairing: "brake noise and engine check", Washing: "full wa
 const CAT_ICON = { Repairing: "wrench", Washing: "droplet", Modification: "sparkles", Maintenance: "settings" };
 
 export default async function Home() {
-  const [services, plans, user] = await Promise.all([
+  const [services, prices, plans, user] = await Promise.all([
     db.service.findMany({ where: { active: true }, orderBy: { id: "asc" } }),
+    db.servicePrice.findMany(),
     db.plan.findMany({ where: { period: "MONTHLY" }, orderBy: { price: "asc" } }),
     getUser(),
   ]);
+  const myVehicles = user ? await db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }) : [];
+  const mine = [...new Set(myVehicles.map((v) => v.type))];
+  const vehicleByType = {};
+  for (const v of myVehicles) if (!vehicleByType[v.type]) vehicleByType[v.type] = v.id;
+  // data[vehicleType][category] = services the owner has priced for that vehicle type
+  const byId = Object.fromEntries(services.map((s) => [s.id, s]));
+  const data = {};
+  for (const p of prices) {
+    const s = byId[p.serviceId];
+    if (!s || !VEHICLE_TYPES[p.vehicleType]) continue;
+    ((data[p.vehicleType] ||= {})[s.category] ||= []).push({ id: s.id, name: s.name, price: p.price });
+  }
 
   return (
     <>
@@ -40,7 +55,7 @@ export default async function Home() {
             </div>
             <div className="stats">
               <div><b>Live</b><span className="muted small">status tracking</span></div>
-              <div><b>₹0</b><span className="muted small">hidden charges</span></div>
+              <div><b>$0</b><span className="muted small">hidden charges</span></div>
               <div><b>1-tap</b><span className="muted small">digital bills</span></div>
             </div>
           </div>
@@ -55,28 +70,17 @@ export default async function Home() {
           <div className="section-head">
             <span className="eyebrow">What we do</span>
             <h2>Everything your car needs, under one roof.</h2>
-            <p className="muted">Starting prices shown for a hatchback. You get an exact estimate for your own vehicle before you book.</p>
+            <p className="muted">{SHOW_PRICES.home ? "Starting prices shown for a hatchback. " : ""}Pick a service, or choose “Others” and describe it in your own words.</p>
           </div>
-          <div className="grid grid-4">
-            {CATEGORIES.map((cat) => {
-              const list = services.filter((s) => s.category === cat);
-              return (
-                <div className="card service-card" key={cat}>
-                  <div className="ico"><Icon name={CAT_ICON[cat]} size={24} /></div>
-                  <h3>{cat}</h3>
-                  <p className="muted small">{CATEGORY_BLURB[cat]}</p>
-                  <ul>
-                    {list.slice(0, 4).map((s) => (
-                      <li key={s.id}><span>{s.name}</span><span>from {inr(s.basePrice)}</span></li>
-                    ))}
-                  </ul>
-                  <Link href={`/book?q=${encodeURIComponent(CAT_QUERY[cat])}`} className="btn-link">
-                    Get {cat.toLowerCase()} estimate <Icon name="arrow" size={16} />
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
+          <HomeServices
+            types={Object.entries(VEHICLE_TYPES).map(([key, v]) => ({ key, label: v.label }))}
+            categories={CATEGORIES}
+            blurbs={CATEGORY_BLURB}
+            data={data}
+            mine={mine}
+            vehicleByType={vehicleByType}
+            showPrices={SHOW_PRICES.home}
+          />
         </div>
       </section>
 
@@ -106,7 +110,7 @@ export default async function Home() {
               <div key={p.id} className={`card plan ${p.popular ? "popular" : ""}`}>
                 {p.popular && <span className="tag">MOST POPULAR</span>}
                 <h3>{p.name}</h3>
-                <div className="price">{inr(p.price)}<small> / month</small></div>
+                {SHOW_PRICES.plans && <div className="price">{money(p.price)}<small> / month</small></div>}
                 <ul>
                   {p.perks.split("\n").slice(0, 4).map((x) => (
                     <li key={x}><Icon name="check" size={16} stroke={2.4} /> {x}</li>

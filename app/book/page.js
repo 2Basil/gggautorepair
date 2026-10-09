@@ -10,6 +10,7 @@ export default async function BookPage({ searchParams }) {
   const user = await requireUser("/book");
   const vehicles = await db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
   const initialQuery = typeof sp.q === "string" ? sp.q : "";
+  const other = sp.other === "1";
   const initialVehicle = Number(sp.vehicle) || vehicles[0]?.id || 0;
 
   return (
@@ -28,6 +29,7 @@ export default async function BookPage({ searchParams }) {
             vehicles={vehicles.map((v) => ({ id: v.id, label: `${v.make} ${v.model} · ${v.regNo}` }))}
             initialVehicle={initialVehicle}
             initialQuery={initialQuery}
+            other={other}
           />
         )}
       </div>

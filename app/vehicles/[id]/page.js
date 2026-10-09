@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { VEHICLE_TYPES, STATUS_LABEL } from "@/lib/config";
-import { fmtDate, inr, prettyReg } from "@/lib/format";
+import { fmtDate, money, prettyReg } from "@/lib/format";
+import { SHOW_PRICES } from "@/lib/settings";
 import { updateOdometer } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function VehiclePage({ params }) {
         <div>
           <span className="eyebrow">Vehicle history</span>
           <h1>{v.make} {v.model} <span className="reg" style={{ fontSize: "1rem", verticalAlign: "middle" }}>{prettyReg(v.regNo)}</span></h1>
-          <div className="muted">{v.year} · {VEHICLE_TYPES[v.type]?.label} · {v.fuel.toLowerCase()} · {v.odometer.toLocaleString("en-IN")} km · lifetime spend {inr(spent)}</div>
+          <div className="muted">{v.year} · {VEHICLE_TYPES[v.type]?.label} · {v.fuel.toLowerCase()} · {v.odometer.toLocaleString("en-US")} km{SHOW_PRICES.customerBills ? ` · lifetime spend ${money(spent)}` : ""}</div>
         </div>
         <Link href={`/book?vehicle=${v.id}`} className="btn btn-primary">Book a service</Link>
       </div>
@@ -48,7 +49,7 @@ export default async function VehiclePage({ params }) {
             {v.bills.map((b) => (
               <div className="job-row" key={b.id}>
                 <div className="grow"><b>{b.number}</b> <span className="muted small">· {fmtDate(b.createdAt)}</span></div>
-                <b>{inr(b.total)}</b>
+                {SHOW_PRICES.customerBills && <b>{money(b.total)}</b>}
                 <span className={`badge ${b.paid ? "paid" : "unpaid"}`}>{b.paid ? "Paid" : "Due"}</span>
                 <Link href={`/bills/${b.id}`} className="btn btn-ghost btn-sm">Open</Link>
               </div>

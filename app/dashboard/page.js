@@ -26,6 +26,7 @@ export default async function Dashboard({ searchParams }) {
         <div>
           <span className="eyebrow">Dashboard</span>
           <h1>Hi {user.name.split(" ")[0]} 👋</h1>
+          {user.userCode && <div className="muted small">Customer ID: <span className="reg">{user.userCode}</span></div>}
         </div>
         <div className="row">
           <Link href="/vehicles/new" className="btn btn-ghost"><Icon name="plus" size={18} /> Add vehicle</Link>
@@ -66,7 +67,7 @@ export default async function Dashboard({ searchParams }) {
               <h3>{v.make} {v.model}</h3>
               <div className="muted small">{v.year} · {VEHICLE_TYPES[v.type]?.label} · {v.fuel[0] + v.fuel.slice(1).toLowerCase()}{v.color ? ` · ${v.color}` : ""}</div>
               <dl className="kv">
-                <dt>Odometer</dt><dd>{v.odometer.toLocaleString("en-IN")} km</dd>
+                <dt>Odometer</dt><dd>{v.odometer.toLocaleString("en-US")} km</dd>
                 {sub && (<><dt>Plan ends</dt><dd>{fmtDate(sub.endsAt)}</dd></>)}
               </dl>
               <div className="row">
@@ -105,7 +106,7 @@ export default async function Dashboard({ searchParams }) {
           </div>
         ))}
       </div>
-      <p className="muted small" style={{ marginTop: 14 }}>All amounts are in INR. Estimates may change after inspection; you always see the final bill before pick-up.</p>
+      <p className="muted small" style={{ marginTop: 14 }}>All amounts are in US dollars ($). Estimates may change after inspection; you always see the final bill before pick-up.</p>
     </div>
   );
 }

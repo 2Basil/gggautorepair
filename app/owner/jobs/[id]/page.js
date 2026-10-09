@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { STEPS, STATUS_LABEL, CATEGORIES } from "@/lib/config";
-import { fmtDateTime, fmtDate, inr, prettyReg } from "@/lib/format";
+import { fmtDateTime, fmtDate, money, prettyReg } from "@/lib/format";
+import ContactButtons from "@/components/ContactButtons";
 import { updateJobStatus, addJobItem, removeJobItem } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,10 @@ export default async function OwnerJob({ params }) {
         <div className="card">
           <h3>Customer request</h3>
           <p>“{job.query}”</p>
-          <div className="muted small">Estimate shown to customer: <b>{inr(job.estMin)} – {inr(job.estMax)}</b></div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <ContactButtons phone={job.user.phone} email={job.user.email} subject={`Your request ${job.code}`} text={`Hello ${job.user.name}, this is ZZZ AUTO REPAIR about your request ${job.code} for your ${job.vehicle.make} ${job.vehicle.model}: "${job.query}"`} />
+            <Link href={`/owner/bills/new?jobId=${job.id}&estimate=1`} className="btn btn-primary btn-sm">Estimated bill</Link>
+          </div>
           <hr className="divider" />
           <h3>Update status</h3>
           <p className="muted small">The customer sees this instantly on their live tracker.</p>
@@ -70,7 +74,7 @@ export default async function OwnerJob({ params }) {
           {job.bills.map((b) => (
             <div className="job-row" key={b.id} style={{ padding: "8px 0" }}>
               <b className="grow">{b.number}</b>
-              <b>{inr(b.total)}</b>
+              <b>{money(b.total)}</b>
               <span className={`badge ${b.paid ? "paid" : "unpaid"}`}>{b.paid ? "Paid" : "Due"}</span>
               <Link href={`/owner/bills/${b.id}`} className="btn btn-ghost btn-sm">Open</Link>
             </div>
@@ -83,7 +87,7 @@ export default async function OwnerJob({ params }) {
           <h3>Work items &amp; charges</h3>
           <Link href={`/owner/bills/new?jobId=${job.id}`} className="btn btn-primary btn-sm">Generate bill from these items</Link>
         </div>
-        <table className="tbl" style={{ marginTop: 8 }}>
+        <div className="table-scroll"><table className="tbl" style={{ marginTop: 8 }}>
           <thead><tr><th>Description</th><th>Category</th><th className="num">Qty</th><th className="num">Rate</th><th className="num">Amount</th><th /></tr></thead>
           <tbody>
             {job.items.map((i) => (
@@ -91,8 +95,8 @@ export default async function OwnerJob({ params }) {
                 <td>{i.description}</td>
                 <td className="muted">{i.category}</td>
                 <td className="num">{i.qty}</td>
-                <td className="num mono">{inr(i.unitPrice)}</td>
-                <td className="num mono">{inr(i.qty * i.unitPrice)}</td>
+                <td className="num mono">{money(i.unitPrice)}</td>
+                <td className="num mono">{money(i.qty * i.unitPrice)}</td>
                 <td className="right">
                   <form action={removeJobItem}>
                     <input type="hidden" name="id" value={i.id} />
@@ -101,9 +105,9 @@ export default async function OwnerJob({ params }) {
                 </td>
               </tr>
             ))}
-            <tr><td colSpan={4} className="right"><b>Subtotal (before GST)</b></td><td className="num mono"><b>{inr(subtotal)}</b></td><td /></tr>
+            <tr><td colSpan={4} className="right"><b>Subtotal (before Tax)</b></td><td className="num mono"><b>{money(subtotal)}</b></td><td /></tr>
           </tbody>
-        </table>
+        </table></div>
 
         <form action={addJobItem} style={{ marginTop: 18 }} className="items-edit">
           <input type="hidden" name="jobId" value={job.id} />
@@ -112,7 +116,7 @@ export default async function OwnerJob({ params }) {
             <input name="description" placeholder="Description (e.g. Brake pads — front set)" list="svc-list" required />
             <select name="category" defaultValue="Repairing">{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
             <input name="qty" type="number" min="1" defaultValue="1" />
-            <input name="unitPrice" type="number" min="0" placeholder="Rate ₹" required />
+            <input name="unitPrice" type="number" min="0" placeholder="Rate $" required />
             <span />
             <button className="btn btn-dark btn-sm">Add</button>
           </div>

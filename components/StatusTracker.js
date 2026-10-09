@@ -1,10 +1,11 @@
 "use client";
 
+import { SHOW_PRICES } from "@/lib/settings";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getJobStatus } from "@/app/actions";
 import { STEPS, STATUS_LABEL } from "@/lib/config";
-import { fmtDateTime, inr } from "@/lib/format";
+import { fmtDateTime, money } from "@/lib/format";
 import Icon from "./Icon";
 
 function MiniCar() {
@@ -57,8 +58,8 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
             </div>
           )}
           {!cancelled && (
-            <div className="row between tiny" style={{ color: "#cfc8b6" }}>
-              {STEPS.map((s, i) => <span key={s.key} style={{ color: i <= idx ? "#fff" : undefined, fontWeight: i === idx ? 700 : 500 }}>{s.label}</span>)}
+            <div className="row between tiny road-labels" style={{ color: "#cfc8b6" }}>
+              {STEPS.map((s, i) => <span key={s.key} className={i === idx ? "cur" : ""} style={{ color: i <= idx ? "#fff" : undefined, fontWeight: i === idx ? 700 : 500 }}>{s.label}</span>)}
             </div>
           )}
         </div>
@@ -93,19 +94,23 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
           <h3>Charges</h3>
           {data.bill ? (
             <>
-              <div className="est-total" style={{ paddingTop: 0 }}>
-                <span className="muted">Final bill</span>
-                <b>{inr(data.bill.total)}</b>
-              </div>
+              {SHOW_PRICES.customerBills && (
+                <div className="est-total" style={{ paddingTop: 0 }}>
+                  <span className="muted">Final bill</span>
+                  <b>{money(data.bill.total)}</b>
+                </div>
+              )}
               <span className={`badge ${data.bill.paid ? "paid" : "unpaid"}`}>{data.bill.paid ? "Paid" : "Pay at garage"}</span>
               <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-block" style={{ marginTop: 14 }}>View final bill</Link>
             </>
           ) : (
             <>
-              <div className="est-total" style={{ paddingTop: 0 }}>
-                <span className="muted">Estimate</span>
-                <b style={{ fontSize: "1.3rem" }}>{inr(estMin)} – {inr(estMax)}</b>
-              </div>
+              {SHOW_PRICES.estimate && (
+                <div className="est-total" style={{ paddingTop: 0 }}>
+                  <span className="muted">Estimate</span>
+                  <b style={{ fontSize: "1.3rem" }}>{money(estMin)} – {money(estMax)}</b>
+                </div>
+              )}
               <ul className="small muted" style={{ paddingLeft: 18, margin: "10px 0 0" }}>
                 {jobItems.map((i, k) => <li key={k}>{i.description}</li>)}
               </ul>

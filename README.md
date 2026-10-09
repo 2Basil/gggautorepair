@@ -1,4 +1,4 @@
-# GGG Auto Repair — car service website
+# ZZZ AUTO REPAIR — car service website
 
 A complete website for a single garage: customers register, add vehicles, describe a problem, see an estimated spend, track the job live (Booked → Repairing → Repaired → Testing → Ready → Delivered) and get digital bills. The owner has a separate portal with analytics, searchable records and a bill generator.
 
@@ -60,5 +60,5 @@ Owner portal (`/owner`, owners only)
 
 ## Notes
 
-- Money is stored as whole rupees. Payments are recorded by the owner (no online payment gateway yet).
+- Money is stored as whole US dollars. Payments are recorded by the owner (no online payment gateway yet).
 - All database access goes through Prisma (`lib/db.js`).

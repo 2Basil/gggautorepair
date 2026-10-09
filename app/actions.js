@@ -1,11 +1,16 @@
 "use server";
 
+import { SHOW_PRICES } from "@/lib/settings";
+
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { createSession, destroySession, getUser, requireOwner, requireUser } from "@/lib/auth";
-import { estimateFor } from "@/lib/estimate";
+import { sendOtp, checkOtp, isPhoneVerified, normalizePhone } from "@/lib/otp";
+import { uniqueUserCode } from "@/lib/userCode";
+import { predict } from "@/lib/pricing";
+import { learnFromBill, loadSamples } from "@/lib/learn";
 import { normReg, billTotals } from "@/lib/format";
 import { STATUS_KEYS, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
 
@@ -40,19 +45,29 @@ function vehicleError(v) {
 
 /* ---------------------------------- auth ---------------------------------- */
 
+export async function sendPhoneOtp(phone) {
+  return await sendOtp(phone);
+}
+
+export async function verifyPhoneOtp(phone, code) {
+  return await checkOtp(phone, code);
+}
+
 export async function registerCustomer(_prev, fd) {
   const f = Object.fromEntries(fd);
   const name = s(f.name);
   const email = s(f.email).toLowerCase();
-  const phone = s(f.phone);
+  const phone = normalizePhone(f.phone);
   const password = String(f.password || "");
-  if (!name || !email.includes("@") || phone.length < 8) return { error: "Please fill in your name, a valid email and phone number." };
+  if (!name || !email.includes("@") || phone.length < 9) return { error: "Please fill in your name, a valid email and phone number." };
+  if (!(await isPhoneVerified(phone))) return { error: "Please verify your mobile number with the OTP first." };
   if (password.length < 6) return { error: "Password must be at least 6 characters." };
   const vehicle = readVehicle(f);
   const ve = vehicleError(vehicle);
   if (ve) return { error: ve, step: 2 };
 
   if (await db.user.findUnique({ where: { email } })) return { error: "An account with this email already exists. Try logging in." };
+  if (await db.user.findFirst({ where: { phone } })) return { error: "An account with this phone number already exists. Try logging in." };
   if (await db.vehicle.findUnique({ where: { regNo: vehicle.regNo } })) return { error: "This registration number is already registered.", step: 2 };
 
   const user = await db.user.create({
@@ -60,6 +75,8 @@ export async function registerCustomer(_prev, fd) {
       name,
       email,
       phone,
+      phoneVerified: true,
+      userCode: await uniqueUserCode(name, phone),
       address: s(f.address) || null,
       city: s(f.city) || null,
       passwordHash: await bcrypt.hash(password, 10),
@@ -86,25 +103,59 @@ export async function logout() {
   redirect("/");
 }
 
-export async function joinAsOwner(_prev, fd) {
-  const code = s(fd.get("code"));
-  if (!process.env.OWNER_ACCESS_CODE || code !== process.env.OWNER_ACCESS_CODE) return { error: "Invalid access code." };
-  const name = s(fd.get("name"));
-  const email = s(fd.get("email")).toLowerCase();
-  const password = String(fd.get("password") || "");
-  if (!name || !email.includes("@") || password.length < 6) return { error: "Enter your name, a valid email and a password of 6+ characters." };
-  const existing = await db.user.findUnique({ where: { email } });
-  let user;
-  if (existing) {
-    if (!(await bcrypt.compare(password, existing.passwordHash))) return { error: "That email already has an account — use its password to upgrade it." };
-    user = await db.user.update({ where: { id: existing.id }, data: { role: "OWNER" } });
-  } else {
-    user = await db.user.create({
-      data: { name, email, phone: s(fd.get("phone")) || "-", passwordHash: await bcrypt.hash(password, 10), role: "OWNER" },
-    });
+export async function joinAsOwner() {
+  // Owner accounts are no longer self-service: the owner logs in with the owner email and can grant access from the portal.
+  return { error: "Owner sign-up is closed. The owner logs in with the owner email on the normal login page." };
+}
+
+export async function changePassword(_prev, fd) {
+  const me = await requireOwner();
+  const cur = String(fd.get("current") || "");
+  const next = String(fd.get("next") || "");
+  const again = String(fd.get("again") || "");
+  const user = await db.user.findUnique({ where: { id: me.id } });
+  if (!user || !(await bcrypt.compare(cur, user.passwordHash))) return { error: "Your current password is not correct." };
+  if (next.length < 8) return { error: "The new password must be at least 8 characters." };
+  if (next !== again) return { error: "The new passwords do not match." };
+  if (next === cur) return { error: "Choose a password different from the current one." };
+  await db.user.update({ where: { id: me.id }, data: { passwordHash: await bcrypt.hash(next, 10) } });
+  return { ok: "Password changed. Use the new password next time you log in." };
+}
+
+export async function savePrices(fd) {
+  await requireOwner();
+  const type = s(fd.get("type"));
+  if (!VEHICLE_TYPES[type]) return;
+  const services = await db.service.findMany({ select: { id: true } });
+  for (const { id } of services) {
+    const raw = s(fd.get(`p_${id}`));
+    if (raw === "") {
+      await db.servicePrice.deleteMany({ where: { serviceId: id, vehicleType: type } });
+    } else {
+      const price = Math.max(0, int(raw));
+      await db.servicePrice.upsert({
+        where: { serviceId_vehicleType: { serviceId: id, vehicleType: type } },
+        update: { price, updatedAt: new Date() },
+        create: { serviceId: id, vehicleType: type, price },
+      });
+    }
   }
-  await createSession(user);
-  redirect("/owner");
+  revalidatePath("/");
+  redirect(`/owner/pricing?type=${type}&saved=1`);
+}
+
+export async function fillPrices(fd) {
+  await requireOwner();
+  const type = s(fd.get("type"));
+  if (!VEHICLE_TYPES[type]) return;
+  const [services, have] = await Promise.all([db.service.findMany(), db.servicePrice.findMany({ where: { vehicleType: type } })]);
+  const haveIds = new Set(have.map((h) => h.serviceId));
+  for (const sv of services) {
+    if (haveIds.has(sv.id)) continue;
+    await db.servicePrice.create({ data: { serviceId: sv.id, vehicleType: type, price: Math.max(1, Math.round(sv.basePrice * VEHICLE_TYPES[type].multiplier)) } });
+  }
+  revalidatePath("/");
+  redirect(`/owner/pricing?type=${type}&filled=1`);
 }
 
 /* --------------------------------- vehicles -------------------------------- */
@@ -136,8 +187,13 @@ export async function estimateQuery(vehicleId, query) {
   const vehicle = await db.vehicle.findUnique({ where: { id: int(vehicleId) } });
   if (!vehicle || vehicle.userId !== user.id) return { error: "Choose one of your vehicles." };
   if (s(query).length < 3) return { error: "Tell us a little more about what you need." };
-  const services = await db.service.findMany({ where: { active: true } });
-  return { estimate: estimateFor(query, services, vehicle.type) };
+  const [services, samples] = await Promise.all([db.service.findMany({ where: { active: true } }), loadSamples()]);
+  const est = predict(s(query), vehicle, services, samples);
+  if (!SHOW_PRICES.estimate) {
+    // keep prices on the server; the client only sees which services we matched
+    return { estimate: { ...est, min: null, max: null, items: est.items.map(({ min, max, mid, ...rest }) => rest) } };
+  }
+  return { estimate: est };
 }
 
 export async function bookJob(vehicleId, query) {
@@ -146,8 +202,8 @@ export async function bookJob(vehicleId, query) {
   if (!vehicle || vehicle.userId !== user.id) return { error: "Choose one of your vehicles." };
   const q = s(query);
   if (q.length < 3) return { error: "Tell us a little more about what you need." };
-  const services = await db.service.findMany({ where: { active: true } });
-  const est = estimateFor(q, services, vehicle.type);
+  const [services, samples] = await Promise.all([db.service.findMany({ where: { active: true } }), loadSamples()]);
+  const est = predict(q, vehicle, services, samples);
 
   const job = await db.job.create({
     data: {
@@ -278,6 +334,7 @@ export async function createBill(payload) {
     },
   });
   await db.bill.update({ where: { id: bill.id }, data: { number: `INV-${String(bill.id).padStart(4, "0")}` } });
+  await learnFromBill(bill.id); // the estimator learns from every final bill
   if (jobId) {
     const job = await db.job.findUnique({ where: { id: jobId } });
     if (job && ["BOOKED", "REPAIRING", "REPAIRED", "TESTING"].includes(job.status)) {
@@ -287,6 +344,7 @@ export async function createBill(payload) {
   }
   revalidatePath("/bills");
   revalidatePath("/owner/bills");
+  revalidatePath("/owner/ai");
   void owner;
   return { id: bill.id };
 }
@@ -297,6 +355,13 @@ export async function toggleBillPaid(fd) {
   const bill = await db.bill.findUnique({ where: { id } });
   if (!bill) return;
   await db.bill.update({ where: { id }, data: { paid: !bill.paid } });
+  if (!bill.paid && bill.jobId) {
+    const job = await db.job.findUnique({ where: { id: bill.jobId } });
+    if (job && job.status === "READY") {
+      await db.job.update({ where: { id: job.id }, data: { status: "DELIVERED", logs: { create: { status: "DELIVERED", note: "Payment received" } } } });
+      revalidatePath(`/track/${job.id}`);
+    }
+  }
   revalidatePath(`/owner/bills/${id}`);
   revalidatePath(`/bills/${id}`);
   revalidatePath("/owner/bills");
@@ -351,4 +416,30 @@ export async function revokeOwner(fd) {
   if (id === me.id) redirect("/owner/access?error=self");
   await db.user.update({ where: { id }, data: { role: "CUSTOMER" } });
   revalidatePath("/owner/access");
+}
+
+/* ------------------------------ AI price learning ------------------------------ */
+
+export async function backfillSamples() {
+  await requireOwner();
+  const bills = await db.bill.findMany({ where: { samples: { none: {} } }, select: { id: true } });
+  let n = 0;
+  for (const b of bills) n += await learnFromBill(b.id);
+  revalidatePath("/owner/ai");
+  redirect(`/owner/ai?learned=${n}`);
+}
+
+export async function toggleSample(fd) {
+  await requireOwner();
+  const id = int(fd.get("id"));
+  const row = await db.priceSample.findUnique({ where: { id } });
+  if (!row) return;
+  await db.priceSample.update({ where: { id }, data: { active: !row.active } });
+  revalidatePath("/owner/ai");
+}
+
+export async function deleteSample(fd) {
+  await requireOwner();
+  await db.priceSample.delete({ where: { id: int(fd.get("id")) } }).catch(() => {});
+  revalidatePath("/owner/ai");
 }

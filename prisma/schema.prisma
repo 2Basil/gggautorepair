@@ -1,4 +1,4 @@
-// GGG Auto Repair — database schema (SQLite via Prisma)
+// ZZZ AUTO REPAIR — database schema (SQLite via Prisma)
 // Enums are stored as plain strings (see lib/config.js) so the schema works on SQLite and Postgres alike.
 
 generator client {
@@ -15,6 +15,8 @@ model User {
   name          String
   email         String         @unique
   phone         String
+  phoneVerified Boolean        @default(false)
+  userCode      String?        @unique // public customer ID, e.g. ZZZ-AAR-4321-K7
   address       String?
   city          String?
   passwordHash  String
@@ -51,8 +53,9 @@ model Service {
   name        String
   category    String // Repairing | Washing | Modification | Maintenance
   description String
-  basePrice   Int // INR, for a hatchback
+  basePrice   Int // USD, for a hatchback
   keywords    String // comma separated, used by the estimate engine
+  prices      ServicePrice[]
   active      Boolean @default(true)
 }
 
@@ -144,6 +147,7 @@ model Bill {
   notes     String?
   createdAt DateTime   @default(now())
   items     BillItem[]
+  samples   PriceSample[]
 
   @@index([userId])
   @@index([vehicleId])
@@ -157,4 +161,52 @@ model BillItem {
   category    String @default("Repairing")
   qty         Int    @default(1)
   unitPrice   Int
+}
+
+// One row per bill line item. The price estimator learns from these (see lib/pricing.js).
+model PriceSample {
+  id          Int      @id @default(autoincrement())
+  billId      Int?
+  bill        Bill?    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  jobId       Int?
+  description String
+  category    String   @default("Repairing")
+  make        String
+  model       String
+  vehicleType String
+  year        Int
+  fuel        String   @default("PETROL")
+  queryText   String   @default("") // what the customer wrote (empty for walk-in bills)
+  unitPrice   Int
+  qty         Int      @default(1)
+  active      Boolean  @default(true) // owner can switch a sample off
+  createdAt   DateTime @default(now())
+
+  @@index([description])
+  @@index([make, model])
+}
+
+// One row per OTP request (rate limiting + the code hash when we send it ourselves).
+model PhoneOtp {
+  id         Int       @id @default(autoincrement())
+  phone      String
+  codeHash   String?
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+// Owner-set price of a service for one vehicle type (shown to customers on the home page).
+model ServicePrice {
+  id          Int      @id @default(autoincrement())
+  serviceId   Int
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  vehicleType String
+  price       Int
+  updatedAt   DateTime @default(now())
+
+  @@unique([serviceId, vehicleType])
 }
