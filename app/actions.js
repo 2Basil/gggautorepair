@@ -353,6 +353,25 @@ export async function updateJobStatus(fd) {
   revalidatePath(`/track/${id}`);
 }
 
+export async function acceptJobRequest(fd) {
+  await requireStaff();
+  const id = int(fd.get("jobId"));
+  const job = await db.job.findUnique({ where: { id } });
+  if (!job) return;
+  await db.job.update({
+    where: { id },
+    data: {
+      status: "REPAIRING",
+      logs: { create: { status: "REPAIRING", note: "Vehicle accepted at garage. Repair started." } },
+    },
+  });
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
+  revalidatePath(`/owner/jobs/${id}`);
+  revalidatePath(`/track/${id}`);
+  revalidatePath("/dashboard");
+}
+
 export async function sendJobEstimate(fd) {
   await requireStaff();
   const jobId = int(fd.get("jobId"));
