@@ -1,14 +1,35 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { generateJobBillFromItems, closeJobCase } from "@/app/actions";
-import { money, billTotals } from "@/lib/format";
+import { money } from "@/lib/format";
 
-export default function OwnerBillGenerator({ jobId, subtotal, defaultTax = 18, hasItems = true }) {
+export default function OwnerBillGenerator({ jobId, subtotal, defaultTax = 18, isPaid = false, paidBill = null }) {
   const [discount, setDiscount] = useState(0);
   const [taxPct, setTaxPct] = useState(defaultTax);
   const [paid, setPaid] = useState(false);
   const [notes, setNotes] = useState("");
+
+  if (isPaid) {
+    return (
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1.5px dashed var(--line)" }}>
+        <div className="alert ok" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <b>✓ Bill {paidBill?.number || ""} Paid &amp; Completed</b>
+            <div className="small">
+              Total amount: <b>{money(paidBill?.total || subtotal)}</b> · Case settled and closed.
+            </div>
+          </div>
+          {paidBill && (
+            <Link href={`/owner/bills/${paidBill.id}`} className="btn btn-ghost btn-sm">
+              View Final Bill →
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const discNum = Math.max(0, Number(discount) || 0);
   const taxNum = Math.min(40, Math.max(0, Number(taxPct) || 0));

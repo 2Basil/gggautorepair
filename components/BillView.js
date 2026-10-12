@@ -15,8 +15,8 @@ export default function BillView({ bill, showPrices = true }) {
             {GARAGE.gstin && <div className="muted small">Tax ID: {GARAGE.gstin}</div>}
           </div>
           <div className="right">
-            <div className="eyebrow" style={{ margin: 0 }}>Tax invoice</div>
-            <div style={{ font: "800 1.4rem var(--display)" }}>{bill.number}</div>
+            <div className="eyebrow" style={{ margin: 0 }}>Invoice · Serial No</div>
+            <div style={{ font: "800 1.4rem var(--display)", letterSpacing: "0.03em" }}>{bill.number}</div>
             <div className="muted small">{fmtDate(bill.createdAt)}</div>
           </div>
         </div>
@@ -66,7 +66,9 @@ export default function BillView({ bill, showPrices = true }) {
         )}
 
         {bill.notes && <p className="muted small" style={{ marginTop: 20 }}><b>Notes:</b> {bill.notes}</p>}
-        <p className="muted tiny" style={{ marginTop: 24 }}>Thank you for choosing {GARAGE.name}. Payment status: {bill.paid ? "Paid" : "Due at the garage"}.</p>
+        <p className="muted tiny" style={{ marginTop: 24, borderTop: "1px dashed var(--line)", paddingTop: 10 }}>
+          Unique Serial No: <b>{bill.number}</b> · Accessible only to registered vehicle owner ({bill.user.name}) and garage administration. Payment status: {bill.paid ? "Paid" : "Due at the garage"}.
+        </p>
       </div>
       <div className="center no-print" style={{ marginTop: 18 }}>
         <PrintButton />

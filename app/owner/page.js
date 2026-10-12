@@ -22,12 +22,24 @@ export default async function OwnerHome() {
     db.job.findMany({
       where: { status: "BOOKED" },
       orderBy: { createdAt: "desc" },
-      include: { vehicle: true, user: true, items: true, logs: { orderBy: { createdAt: "desc" }, take: 2 } },
+      include: {
+        vehicle: true,
+        user: true,
+        items: true,
+        logs: { orderBy: { createdAt: "desc" }, take: 2 },
+        bills: { select: { id: true, paid: true, total: true } },
+      },
     }),
     db.job.findMany({
       where: { status: { in: ["REPAIRING", "REPAIRED", "TESTING", "READY"] } },
       orderBy: { updatedAt: "desc" },
-      include: { vehicle: true, user: true, items: true, logs: { orderBy: { createdAt: "desc" }, take: 2 } },
+      include: {
+        vehicle: true,
+        user: true,
+        items: true,
+        logs: { orderBy: { createdAt: "desc" }, take: 2 },
+        bills: { select: { id: true, paid: true, total: true } },
+      },
     }),
   ]);
 

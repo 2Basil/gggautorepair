@@ -9,18 +9,23 @@ export const dynamic = "force-dynamic";
 
 export default async function OwnerBill({ params }) {
   const { id } = await params;
-  const bill = await db.bill.findUnique({
-    where: { id: Number(id) || 0 },
+  const bill = await db.bill.findFirst({
+    where: isNaN(Number(id))
+      ? { number: String(id) }
+      : { OR: [{ id: Number(id) }, { number: String(id) }] },
     include: { items: true, user: true, vehicle: true, job: true },
   });
   if (!bill) notFound();
+
   return (
     <>
       {/* Top action bar */}
       <div className="row between no-print" style={{ marginBottom: 8 }}>
         <Link href="/owner/bills" className="btn btn-ghost btn-sm">← All bills</Link>
         <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-          <span className="muted small" style={{ alignSelf: "center" }}>Visible to {bill.user.name} in "My bills".</span>
+          <span className="muted small" style={{ alignSelf: "center" }}>
+            Invoice Serial No: <b>{bill.number}</b> · Visible only to {bill.user.name} and garage
+          </span>
           <ShareBill bill={bill} user={bill.user} vehicle={bill.vehicle} />
           <form action={toggleBillPaid}>
             <input type="hidden" name="id" value={bill.id} />

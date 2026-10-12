@@ -23,6 +23,10 @@ export default async function OwnerJob({ params }) {
   });
   if (!job) notFound();
 
+  const paidBill = job.bills.find((b) => b.paid);
+  const isPaid = !!paidBill;
+  const isClosed = isPaid || job.status === "DELIVERED" || job.status === "CANCELLED";
+
   const services = await db.service.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
   const subtotal = job.items.reduce((a, i) => a + (i.qty || 1) * (i.unitPrice || 0), 0);
   const currentIdx = STEPS.findIndex((s) => s.key === job.status);
@@ -50,9 +54,9 @@ export default async function OwnerJob({ params }) {
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start", marginBottom: 18 }}>
-        {/* Customer request & Send estimate */}
+        {/* Customer request & Status */}
         <div className="card">
-          <h3>Customer request &amp; Estimate</h3>
+          <h3>Customer request</h3>
           <p style={{ background: "var(--cream-2)", padding: "10px 14px", borderRadius: 10, fontSize: "0.95rem" }}>
             “{job.query}”
           </p>
@@ -67,48 +71,58 @@ export default async function OwnerJob({ params }) {
 
           <hr className="divider" />
 
-          {/* 1. Send / Update Estimate Price */}
-          <h4 style={{ margin: "0 0 4px" }}>Send / Update Estimate Price</h4>
-          <p className="muted small" style={{ margin: "0 0 10px" }}>
-            The customer gets an instant flashing notification on their portal with this price.
-          </p>
-          <form action={sendJobEstimate} style={{ marginBottom: 10 }}>
-            <input type="hidden" name="jobId" value={job.id} />
-            <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-              <div style={{ flex: 1 }}>
-                <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Min Estimate ($)</label>
-                <input
-                  type="number"
-                  name="estMin"
-                  defaultValue={job.estMin}
-                  placeholder="Min $"
-                  required
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Max Estimate ($)</label>
-                <input
-                  type="number"
-                  name="estMax"
-                  defaultValue={job.estMax}
-                  placeholder="Max $"
-                />
+          {/* Estimate option: ONLY show in the starting phase; once bill is paid or job is closed, do NOT show estimate */}
+          {isPaid ? (
+            <div style={{ background: "#dff1e6", color: "#1d5a3f", padding: "12px 16px", borderRadius: 12, marginBottom: 14 }}>
+              <div style={{ fontWeight: 800 }}>✓ Bill {paidBill.number} Paid &amp; Settled</div>
+              <div className="small" style={{ marginTop: 2 }}>
+                Payment of <b>{money(paidBill.total)}</b> received. Estimate phase is closed.
               </div>
             </div>
-            <div className="field">
-              <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Note to customer</label>
-              <input
-                name="note"
-                placeholder="e.g. Estimate sent. Please bring your vehicle to the garage."
-                defaultValue="Estimate sent. Please bring your vehicle to the garage."
-              />
-            </div>
-            <button className="btn btn-primary btn-block">
-              Send Estimate to Customer 🔔
-            </button>
-          </form>
-
-          <hr className="divider" />
+          ) : !isClosed && job.status === "BOOKED" ? (
+            <>
+              <h4 style={{ margin: "0 0 4px" }}>Send / Update Estimate Price (Starting Phase)</h4>
+              <p className="muted small" style={{ margin: "0 0 10px" }}>
+                The customer receives a flashing notification with this starting quote to bring their vehicle in.
+              </p>
+              <form action={sendJobEstimate} style={{ marginBottom: 10 }}>
+                <input type="hidden" name="jobId" value={job.id} />
+                <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Min Estimate ($)</label>
+                    <input
+                      type="number"
+                      name="estMin"
+                      defaultValue={job.estMin}
+                      placeholder="Min $"
+                      required
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Max Estimate ($)</label>
+                    <input
+                      type="number"
+                      name="estMax"
+                      defaultValue={job.estMax}
+                      placeholder="Max $"
+                    />
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Note to customer</label>
+                  <input
+                    name="note"
+                    placeholder="e.g. Estimate sent. Please bring your vehicle to the garage."
+                    defaultValue="Estimate sent. Please bring your vehicle to the garage."
+                  />
+                </div>
+                <button className="btn btn-primary btn-block">
+                  Send Estimate to Customer 🔔
+                </button>
+              </form>
+              <hr className="divider" />
+            </>
+          ) : null}
 
           {/* Update Job Status */}
           <h4 style={{ margin: "0 0 4px" }}>Update status</h4>
@@ -159,7 +173,7 @@ export default async function OwnerJob({ params }) {
         </div>
       </div>
 
-      {/* Same portal view: Estimate first, then all work items & fault charges */}
+      {/* Charges & Work Items Portal */}
       <div className="card">
         <div className="row between" style={{ alignItems: "baseline", marginBottom: 12 }}>
           <div>
@@ -169,15 +183,24 @@ export default async function OwnerJob({ params }) {
             </p>
           </div>
           <div className="row" style={{ gap: 10, alignItems: "center" }}>
-            <div style={{ background: "var(--cream-2)", padding: "6px 14px", borderRadius: 10 }}>
-              <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Estimate: </span>
-              <b className="mono" style={{ color: "var(--accent)" }}>
-                {money(job.estMin)}{job.estMin !== job.estMax ? ` – ${money(job.estMax)}` : ""}
-              </b>
-            </div>
-            <Link href={`/owner/bills/new?jobId=${job.id}`} className="btn btn-ghost btn-sm">
-              Advanced bill editor →
-            </Link>
+            {/* Estimate ONLY shown when not yet paid / starting phase */}
+            {isPaid ? (
+              <div style={{ background: "#dff1e6", color: "#1d5a3f", padding: "6px 14px", borderRadius: 10, fontWeight: 700 }}>
+                Final Paid: {money(paidBill.total)}
+              </div>
+            ) : !isClosed && (
+              <div style={{ background: "var(--cream-2)", padding: "6px 14px", borderRadius: 10 }}>
+                <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Estimate: </span>
+                <b className="mono" style={{ color: "var(--accent)" }}>
+                  {money(job.estMin)}{job.estMin !== job.estMax ? ` – ${money(job.estMax)}` : ""}
+                </b>
+              </div>
+            )}
+            {!isPaid && (
+              <Link href={`/owner/bills/new?jobId=${job.id}`} className="btn btn-ghost btn-sm">
+                Advanced bill editor →
+              </Link>
+            )}
           </div>
         </div>
 
@@ -203,10 +226,12 @@ export default async function OwnerJob({ params }) {
                   <td className="num mono">{money(i.unitPrice)}</td>
                   <td className="num mono"><b>{money((i.qty || 1) * i.unitPrice)}</b></td>
                   <td className="right">
-                    <form action={removeJobItem}>
-                      <input type="hidden" name="id" value={i.id} />
-                      <button className="btn-link danger small">Remove</button>
-                    </form>
+                    {!isPaid && (
+                      <form action={removeJobItem}>
+                        <input type="hidden" name="id" value={i.id} />
+                        <button className="btn-link danger small">Remove</button>
+                      </form>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -230,43 +255,46 @@ export default async function OwnerJob({ params }) {
           </table>
         </div>
 
-        {/* Add new point / fault form */}
-        <form action={addJobItem} style={{ marginTop: 18 }} className="items-edit">
-          <input type="hidden" name="jobId" value={job.id} />
-          <div className="small muted" style={{ marginBottom: 8, fontWeight: 600 }}>
-            + Add new point / fault / service (e.g. Car Washing, AC Leak, Brake caliper)
-          </div>
-          <div className="row-grid">
-            <input
-              name="description"
-              placeholder="Description (e.g. Washing, Front brake pads, Oil filter)"
-              list="svc-list"
-              required
-            />
-            <select name="category" defaultValue="Repairing">
-              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <input name="qty" type="number" min="1" defaultValue="1" title="Quantity" />
-            <input name="unitPrice" type="number" min="0" placeholder="Amount / Rate $" required />
-            <span />
-            <button className="btn btn-dark btn-sm">Add charge</button>
-          </div>
-          <datalist id="svc-list">
-            {services.map((s) => <option key={s.id} value={s.name} />)}
-            <option value="Car Washing & Detailing" />
-            <option value="Engine Oil & Filter Change" />
-            <option value="AC Gas Refill & Cooling Coil" />
-            <option value="Brake Pads Replacement" />
-            <option value="Wheel Alignment & Balancing" />
-          </datalist>
-        </form>
+        {/* Add new point / fault form — only if bill not yet paid */}
+        {!isPaid && (
+          <form action={addJobItem} style={{ marginTop: 18 }} className="items-edit">
+            <input type="hidden" name="jobId" value={job.id} />
+            <div className="small muted" style={{ marginBottom: 8, fontWeight: 600 }}>
+              + Add new point / fault / service (e.g. Car Washing, AC Leak, Brake caliper)
+            </div>
+            <div className="row-grid">
+              <input
+                name="description"
+                placeholder="Description (e.g. Washing, Front brake pads, Oil filter)"
+                list="svc-list"
+                required
+              />
+              <select name="category" defaultValue="Repairing">
+                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+              <input name="qty" type="number" min="1" defaultValue="1" title="Quantity" />
+              <input name="unitPrice" type="number" min="0" placeholder="Amount / Rate $" required />
+              <span />
+              <button className="btn btn-dark btn-sm">Add charge</button>
+            </div>
+            <datalist id="svc-list">
+              {services.map((s) => <option key={s.id} value={s.name} />)}
+              <option value="Car Washing & Detailing" />
+              <option value="Engine Oil & Filter Change" />
+              <option value="AC Gas Refill & Cooling Coil" />
+              <option value="Brake Pads Replacement" />
+              <option value="Wheel Alignment & Balancing" />
+            </datalist>
+          </form>
+        )}
 
-        {/* Generate Final Bill with Discount Column (Auto-calculated) */}
+        {/* Generate Final Bill with Discount Column */}
         <OwnerBillGenerator
           jobId={job.id}
           subtotal={subtotal}
           defaultTax={GARAGE.taxPct}
-          hasItems={job.items.length > 0}
+          isPaid={isPaid}
+          paidBill={paidBill}
         />
       </div>
     </>

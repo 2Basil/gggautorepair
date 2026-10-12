@@ -179,15 +179,22 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
               <div className="row between" style={{ alignItems: "center", gap: 14, flexWrap: "wrap", paddingTop: 4 }}>
                 {/* Financial Summary */}
                 <div className="row" style={{ gap: 16, alignItems: "center" }}>
-                  <div>
-                    <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Estimate:</span>
-                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent)" }}>
-                      {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                  {isPaid ? (
+                    <div>
+                      <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Settled Bill:</span>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--ok)" }}>
+                        ✓ Paid {money(paidBill.total)}
+                      </div>
                     </div>
-                  </div>
-
-                  {subtotal > 0 && (
-                    <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 14 }}>
+                  ) : isRequested ? (
+                    <div>
+                      <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Starting Estimate:</span>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent)" }}>
+                        {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
                       <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Logged Charges:</span>
                       <div className="mono" style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--ink)" }}>
                         {money(subtotal)}{" "}
@@ -199,9 +206,13 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                   )}
                 </div>
 
-                {/* Specific Actions based on whether requested or accepted */}
+                {/* Specific Actions based on whether requested, accepted, or paid */}
                 <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {isRequested ? (
+                  {isPaid ? (
+                    <Link href={`/owner/bills/${paidBill.id}`} className="btn btn-ghost btn-sm">
+                      View Paid Bill →
+                    </Link>
+                  ) : isRequested ? (
                     <>
                       {/* One-click Accept & Start Repair */}
                       <form action={acceptJobRequest}>
@@ -211,7 +222,7 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                         </button>
                       </form>
 
-                      {/* Quick Send Estimate Form */}
+                      {/* Quick Send Estimate Form (only at starting phase) */}
                       <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="jobId" value={j.id} />
                         <input

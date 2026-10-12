@@ -50,8 +50,8 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
 
   return (
     <div>
-      {/* Flash notification banner when estimate is ready / active */}
-      {!cancelled && !done && (
+      {/* Flash notification banner when estimate is ready / active (only during starting phase before paid) */}
+      {!cancelled && !done && !data.bill?.paid && (
         <div className="notif-flash" style={{ marginBottom: 20 }}>
           <div className="row between" style={{ alignItems: "center" }}>
             <div className="row" style={{ gap: 12, alignItems: "center" }}>
@@ -126,10 +126,21 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
               <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
             </div>
 
-            {/* 1. First: Estimated price */}
-            {SHOW_PRICES.estimate && (
+            {/* 1. First: Estimated price (Only shown during starting phase; once bill is paid, estimate is removed) */}
+            {data.bill?.paid ? (
+              <div style={{ background: "#dff1e6", color: "#1d5a3f", padding: "12px 16px", borderRadius: 12, marginBottom: 14 }}>
+                <div className="tiny uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>Final Bill Paid &amp; Completed</div>
+                <div className="row between" style={{ alignItems: "baseline", marginTop: 4 }}>
+                  <b style={{ fontSize: "1.35rem" }}>{money(data.bill.total)}</b>
+                  <span className="badge paid">Paid in Full</span>
+                </div>
+                <p className="tiny" style={{ margin: "4px 0 0" }}>
+                  Thank you for your visit! All services and fault repairs have been settled.
+                </p>
+              </div>
+            ) : SHOW_PRICES.estimate && !done && (
               <div style={{ background: "var(--cream-2)", padding: "12px 16px", borderRadius: 12, marginBottom: 14 }}>
-                <div className="tiny muted uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>1. Garage Estimate</div>
+                <div className="tiny muted uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>1. Garage Estimate (Starting Phase)</div>
                 <div className="row between" style={{ alignItems: "baseline", marginTop: 4 }}>
                   <b style={{ fontSize: "1.35rem", color: "var(--accent)" }}>
                     {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
