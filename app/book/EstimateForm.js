@@ -20,9 +20,33 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
   const router = useRouter();
   const [vehicleId, setVehicleId] = useState(initialVehicle);
   const [query, setQuery] = useState(initialQuery);
+  const [selected, setSelected] = useState(new Set());
   const [est, setEst] = useState(null);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
+
+  function toggleChip(chip) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(chip)) {
+        next.delete(chip);
+      } else {
+        next.add(chip);
+      }
+      // Rebuild query: chip selections first, then any free-typed text that
+      // isn't one of the example chips.
+      const freeText = query
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && !EXAMPLES.includes(s))
+        .join(", ");
+      const chipText = [...next].join(", ");
+      const combined = [chipText, freeText].filter(Boolean).join(", ");
+      setQuery(combined);
+      setEst(null);
+      return next;
+    });
+  }
 
   function run(e) {
     e?.preventDefault();
@@ -57,7 +81,20 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
         </div>
         <div className="chips">
           {EXAMPLES.map((x) => (
-            <button type="button" key={x} className="chip" onClick={() => { setQuery(x); setEst(null); }}>{x}</button>
+            <button
+              type="button"
+              key={x}
+              className={`chip${selected.has(x) ? " chip-active" : ""}`}
+              onClick={() => toggleChip(x)}
+              aria-pressed={selected.has(x)}
+            >
+              {selected.has(x) && (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginRight: 4, flexShrink: 0, verticalAlign: "middle" }}>
+                  <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+              {x}
+            </button>
           ))}
         </div>
         {error && <div className="alert err">{error}</div>}

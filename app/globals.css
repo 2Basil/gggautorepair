@@ -194,8 +194,10 @@ input[type="checkbox"] { width: auto; }
 .wizard-steps b { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--line); color: var(--ink); font-size: 0.78rem; }
 .wizard-steps .on b { background: var(--accent); color: #fff; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
-.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; font-family: var(--font); color: var(--ink); }
+.chip { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; font-family: var(--font); color: var(--ink); transition: border-color 0.15s, color 0.15s, background 0.15s, transform 0.12s, box-shadow 0.15s; }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip-active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 4px 12px -4px rgba(200, 69, 43, 0.5); transform: scale(1.03); }
+.chip-active:hover { background: var(--accent-d); border-color: var(--accent-d); color: #fff; }
 
 /* ---------- badges / tables ---------- */
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: var(--cream-2); color: #4a4f59; white-space: nowrap; }

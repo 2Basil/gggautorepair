@@ -20,7 +20,19 @@ export default async function OwnerBills() {
       </div>
       <div className="table-wrap">
         <table className="tbl">
-          <thead><tr><th>Bill</th><th>Date</th><th>Customer</th><th>Vehicle</th><th className="num">Total</th><th>Status</th><th>Share</th><th /></tr></thead>
+          <thead>
+            <tr>
+              <th>Bill</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Vehicle</th>
+              <th className="num">Total</th>
+              <th>Status</th>
+              <th>Share</th>
+              <th>Due reminder</th>
+              <th />
+            </tr>
+          </thead>
           <tbody>
             {bills.map((b) => (
               <tr key={b.id}>
@@ -31,6 +43,11 @@ export default async function OwnerBills() {
                 <td className="num mono"><b>{money(b.total)}</b></td>
                 <td><span className={`badge ${b.paid ? "paid" : "unpaid"}`}>{b.paid ? "Paid" : "Due"}</span></td>
                 <td><ShareBill bill={b} user={b.user} vehicle={b.vehicle} /></td>
+                <td>
+                  {!b.paid
+                    ? <ShareBill bill={b} user={b.user} vehicle={b.vehicle} reminder={true} />
+                    : <span className="muted small">—</span>}
+                </td>
                 <td className="right"><Link href={`/owner/bills/${b.id}`} className="btn btn-ghost btn-sm">Open</Link></td>
               </tr>
             ))}

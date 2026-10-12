@@ -125,6 +125,30 @@ export async function changePassword(_prev, fd) {
   return { ok: "Password changed. Use the new password next time you log in." };
 }
 
+export async function sendPasswordResetOtp(email) {
+  const e = s(email).toLowerCase();
+  if (!e.includes("@")) return { error: "Enter a valid email address." };
+  // Always return success-like response to avoid leaking whether an email is registered
+  const user = await db.user.findUnique({ where: { email: e } });
+  if (!user) return { ok: true }; // silent — don't leak account existence
+  return await sendOtp(e);
+}
+
+export async function resetPassword(email, code, password, confirm) {
+  const e = s(email).toLowerCase();
+  const pw = String(password || "");
+  const cf = String(confirm || "");
+  if (!e.includes("@")) return { error: "Invalid email." };
+  if (pw.length < 8) return { error: "New password must be at least 8 characters." };
+  if (pw !== cf) return { error: "Passwords do not match." };
+  const verified = await checkOtp(e, code);
+  if (verified?.error) return verified;
+  const user = await db.user.findUnique({ where: { email: e } });
+  if (!user) return { error: "No account found with that email address." };
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(pw, 10) } });
+  return { ok: "Your password has been reset. You can now log in." };
+}
+
 /* ------------------------------- employees ------------------------------- */
 
 export async function addEmployee(_prev, fd) {
