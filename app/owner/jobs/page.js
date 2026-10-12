@@ -31,7 +31,7 @@ export default async function OwnerJobs({ searchParams }) {
       </div>
       <div className="table-wrap">
         <table className="tbl">
-          <thead><tr><th>Job</th><th>Date</th><th>Vehicle</th><th>Customer</th><th>Request</th><th>Status</th><th>Contact</th><th /></tr></thead>
+          <thead><tr><th>Job</th><th>Date</th><th>Vehicle</th><th>Customer</th><th>Request</th><th>Estimate</th><th>Status</th><th>Contact</th><th /></tr></thead>
           <tbody>
             {jobs.map((j) => (
               <tr key={j.id}>
@@ -40,6 +40,9 @@ export default async function OwnerJobs({ searchParams }) {
                 <td>{j.vehicle.make} {j.vehicle.model}<div><span className="reg">{prettyReg(j.vehicle.regNo)}</span></div></td>
                 <td>{j.user.name}<div className="muted small">{j.user.phone}</div></td>
                 <td className="muted small" style={{ maxWidth: 220 }}>{j.query}</td>
+                <td className="mono" style={{ fontWeight: 600, color: "var(--accent)" }}>
+                  {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                </td>
                 <td><span className={`badge ${j.status}`}>{STATUS_LABEL[j.status]}</span></td>
                 <td><ContactButtons phone={j.user.phone} email={j.user.email} subject={`Your request ${j.code}`} text={`Hello ${j.user.name}, this is ZZZ AUTO REPAIR about your request ${j.code} for your ${j.vehicle.make} ${j.vehicle.model}: "${j.query}"`} /></td>
                 <td className="right nowrap">

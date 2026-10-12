@@ -3,7 +3,7 @@
 import { SHOW_PRICES } from "@/lib/settings";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getJobStatus } from "@/app/actions";
+import { getJobStatus, customerCancelJob } from "@/app/actions";
 import { STEPS, STATUS_LABEL } from "@/lib/config";
 import { fmtDateTime, money } from "@/lib/format";
 import Icon from "./Icon";
@@ -36,87 +36,194 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
   const cancelled = data.status === "CANCELLED";
   const idx = Math.max(0, STEPS.findIndex((s) => s.key === data.status));
   const pct = (idx / (STEPS.length - 1)) * 100;
-  const current = STEPS[idx];
-  const logFor = (key) => [...data.logs].reverse().find((l) => l.status === key);
+  const current = STEPS[idx] || STEPS[0];
+  const logFor = (key) => [...(data.logs || [])].reverse().find((l) => l.status === key);
   const done = data.status === "DELIVERED";
 
+  const currentEstMin = data.estMin ?? estMin;
+  const currentEstMax = data.estMax ?? estMax;
+  const items = data.items || jobItems || [];
+  const subtotal = items.reduce((acc, i) => acc + (Number(i.qty) || 1) * (Number(i.unitPrice) || 0), 0);
+
+  // Check if owner sent a custom estimate note
+  const estimateLog = [...(data.logs || [])].reverse().find((l) => l.note?.toLowerCase().includes("estimate"));
+
   return (
-    <div className="track-grid">
-      <div className="stack">
-        <div className="track-hero">
-          <span className="pill">{!done && !cancelled && <i className="pulse" />} {code} · {vehicleLabel}</span>
-          <h2>{cancelled ? "This request was cancelled" : current.title}</h2>
-          <p>{cancelled ? "Please contact the garage if this was a mistake." : current.desc}</p>
-          {!cancelled && (
-            <div className="road">
-              <div className="road-line" />
-              <div className="road-fill" style={{ width: `${pct}%` }} />
-              <div className="road-stops">
-                {STEPS.map((s, i) => <i key={s.key} className={i <= idx ? "done" : ""} />)}
+    <div>
+      {/* Flash notification banner when estimate is ready / active */}
+      {!cancelled && !done && (
+        <div className="notif-flash" style={{ marginBottom: 20 }}>
+          <div className="row between" style={{ alignItems: "center" }}>
+            <div className="row" style={{ gap: 12, alignItems: "center" }}>
+              <span className="pulse" style={{ width: 12, height: 12, background: "var(--accent)" }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "1.02rem", color: "var(--accent)" }}>
+                  🔔 Garage Estimate: {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
+                </div>
+                <div className="small muted" style={{ marginTop: 2 }}>
+                  {estimateLog?.note ? estimateLog.note : "Please bring your vehicle to the garage. You can see the initial estimate and all work charges logged below."}
+                </div>
               </div>
-              <div className="road-car" style={{ left: `${Math.min(Math.max(pct, 6), 94)}%` }}><MiniCar /></div>
             </div>
-          )}
-          {!cancelled && (
-            <div className="row between tiny road-labels" style={{ color: "#cfc8b6" }}>
-              {STEPS.map((s, i) => <span key={s.key} className={i === idx ? "cur" : ""} style={{ color: i <= idx ? "#fff" : undefined, fontWeight: i === idx ? 700 : 500 }}>{s.label}</span>)}
-            </div>
-          )}
+            <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="track-grid">
+        <div className="stack">
+          <div className="track-hero">
+            <span className="pill">{!done && !cancelled && <i className="pulse" />} {code} · {vehicleLabel}</span>
+            <h2>{cancelled ? "This request was cancelled" : current.title}</h2>
+            <p>{cancelled ? "Please contact the garage if this was a mistake or you wish to re-open." : current.desc}</p>
+            {!cancelled && (
+              <div className="road">
+                <div className="road-line" />
+                <div className="road-fill" style={{ width: `${pct}%` }} />
+                <div className="road-stops">
+                  {STEPS.map((s, i) => <i key={s.key} className={i <= idx ? "done" : ""} />)}
+                </div>
+                <div className="road-car" style={{ left: `${Math.min(Math.max(pct, 6), 94)}%` }}><MiniCar /></div>
+              </div>
+            )}
+            {!cancelled && (
+              <div className="row between tiny road-labels" style={{ color: "#cfc8b6" }}>
+                {STEPS.map((s, i) => <span key={s.key} className={i === idx ? "cur" : ""} style={{ color: i <= idx ? "#fff" : undefined, fontWeight: i === idx ? 700 : 500 }}>{s.label}</span>)}
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h3 style={{ marginBottom: 18 }}>Progress timeline</h3>
+            <ol className="timeline">
+              {STEPS.map((s, i) => {
+                const state = i < idx || done ? "done" : i === idx ? "now" : "todo";
+                const log = logFor(s.key);
+                return (
+                  <li key={s.key} className={`tl ${state}`}>
+                    <span className="dot">{state === "done" ? <Icon name="check" size={18} stroke={3} /> : <span style={{ fontWeight: 700, fontSize: 13 }}>{i + 1}</span>}</span>
+                    <div>
+                      <h4>{s.title}</h4>
+                      <p>{log?.note && log.note !== "Request received" ? log.note : s.desc}</p>
+                      {log && <div className="when">{fmtDateTime(log.at)}</div>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </div>
 
-        <div className="card">
-          <h3 style={{ marginBottom: 18 }}>Progress</h3>
-          <ol className="timeline">
-            {STEPS.map((s, i) => {
-              const state = i < idx || done ? "done" : i === idx ? "now" : "todo";
-              const log = logFor(s.key);
-              return (
-                <li key={s.key} className={`tl ${state}`}>
-                  <span className="dot">{state === "done" ? <Icon name="check" size={18} stroke={3} /> : <span style={{ fontWeight: 700, fontSize: 13 }}>{i + 1}</span>}</span>
-                  <div>
-                    <h4>{s.title}</h4>
-                    <p>{log?.note && log.note !== "Request received" ? log.note : s.desc}</p>
-                    {log && <div className="when">{fmtDateTime(log.at)}</div>}
+        <div className="stack">
+          <div className="card">
+            <h3>Your service request</h3>
+            <p className="muted" style={{ marginBottom: 0 }}>“{query}”</p>
+          </div>
+
+          <div className="card">
+            <div className="row between" style={{ alignItems: "baseline", marginBottom: 10 }}>
+              <h3>Charges portal</h3>
+              <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
+            </div>
+
+            {/* 1. First: Estimated price */}
+            {SHOW_PRICES.estimate && (
+              <div style={{ background: "var(--cream-2)", padding: "12px 16px", borderRadius: 12, marginBottom: 14 }}>
+                <div className="tiny muted uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>1. Garage Estimate</div>
+                <div className="row between" style={{ alignItems: "baseline", marginTop: 4 }}>
+                  <b style={{ fontSize: "1.35rem", color: "var(--accent)" }}>
+                    {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
+                  </b>
+                  <span className="tiny muted">Initial quote</span>
+                </div>
+                <p className="tiny muted" style={{ margin: "4px 0 0" }}>
+                  Estimated range for your vehicle. As our team inspects &amp; repairs, specific work items appear below.
+                </p>
+              </div>
+            )}
+
+            {/* 2. Then: All amounts which will get updated by owner */}
+            <div style={{ marginTop: 8 }}>
+              <div className="row between" style={{ alignItems: "center", marginBottom: 8 }}>
+                <b className="small">2. Work items &amp; Fault charges</b>
+                <span className="badge" style={{ fontSize: "0.75rem" }}>{items.length} {items.length === 1 ? "item" : "items"}</span>
+              </div>
+
+              {items.length > 0 ? (
+                <div className="table-scroll" style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 10, background: "#fff" }}>
+                  <table className="tbl" style={{ fontSize: "0.86rem", margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Item / Fault</th>
+                        <th>Category</th>
+                        <th className="num">Qty</th>
+                        <th className="num">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((it, k) => (
+                        <tr key={it.id || k}>
+                          <td><b>{it.description}</b></td>
+                          <td className="muted tiny">{it.category || "Repairing"}</td>
+                          <td className="num">{it.qty || 1}</td>
+                          <td className="num mono"><b>{money((Number(it.qty) || 1) * (Number(it.unitPrice) || 0))}</b></td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "var(--cream-2)" }}>
+                        <td colSpan={3}><b>Current subtotal</b></td>
+                        <td className="num mono"><b>{money(subtotal)}</b></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty" style={{ padding: "16px 10px", fontSize: "0.85rem" }}>
+                  No itemized charges added yet. Any new fault, washing, or repair charge will appear here live.
+                </div>
+              )}
+            </div>
+
+            {/* 3. Final Bill if generated */}
+            {data.bill ? (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+                <div className="row between" style={{ alignItems: "baseline" }}>
+                  <span className="muted">Final total</span>
+                  <b style={{ fontSize: "1.4rem", color: "var(--ink)" }}>{money(data.bill.total)}</b>
+                </div>
+                <div className="row between" style={{ marginTop: 8, alignItems: "center" }}>
+                  <span className={`badge ${data.bill.paid ? "paid" : "unpaid"}`}>{data.bill.paid ? "Paid" : "Pay at garage"}</span>
+                  <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-sm">View final bill →</Link>
+                </div>
+              </div>
+            ) : (
+              <p className="tiny muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                Charges are automatically compiled into the final bill once repairs and quality check are complete.
+              </p>
+            )}
+
+            {/* 4. Option to step back if customer doesn't want to afford additional money */}
+            {!cancelled && !done && (
+              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--line)" }}>
+                <details className="small">
+                  <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>
+                    Need to step back from service?
+                  </summary>
+                  <div style={{ marginTop: 8, padding: 12, background: "#fff8f6", borderRadius: 10, border: "1px solid #fed7d7" }}>
+                    <p className="tiny muted" style={{ marginBottom: 10 }}>
+                      If any new fault or updated charges exceed your budget, you can step back before further work is done. The garage can close the case with only approved charges.
+                    </p>
+                    <form action={customerCancelJob}>
+                      <input type="hidden" name="jobId" value={jobId} />
+                      <input type="hidden" name="reason" value="Customer stepped back due to repair charges." />
+                      <button className="btn btn-ghost btn-sm" style={{ color: "#c53030", borderColor: "#feb2b2" }}>
+                        Cancel / Step back from request
+                      </button>
+                    </form>
                   </div>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      </div>
-
-      <div className="stack">
-        <div className="card">
-          <h3>Your request</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>“{query}”</p>
-        </div>
-        <div className="card">
-          <h3>Charges</h3>
-          {data.bill ? (
-            <>
-              {SHOW_PRICES.customerBills && (
-                <div className="est-total" style={{ paddingTop: 0 }}>
-                  <span className="muted">Final bill</span>
-                  <b>{money(data.bill.total)}</b>
-                </div>
-              )}
-              <span className={`badge ${data.bill.paid ? "paid" : "unpaid"}`}>{data.bill.paid ? "Paid" : "Pay at garage"}</span>
-              <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-block" style={{ marginTop: 14 }}>View final bill</Link>
-            </>
-          ) : (
-            <>
-              {SHOW_PRICES.estimate && (
-                <div className="est-total" style={{ paddingTop: 0 }}>
-                  <span className="muted">Estimate</span>
-                  <b style={{ fontSize: "1.3rem" }}>{money(estMin)} – {money(estMax)}</b>
-                </div>
-              )}
-              <ul className="small muted" style={{ paddingLeft: 18, margin: "10px 0 0" }}>
-                {jobItems.map((i, k) => <li key={k}>{i.description}</li>)}
-              </ul>
-              <p className="tiny muted" style={{ marginTop: 10 }}>Final charge appears here once the work is tested. Status: {STATUS_LABEL[data.status]}.</p>
-            </>
-          )}
+                </details>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { STATUS_LABEL, STEPS } from "@/lib/config";
 import { fmtDate, money, prettyReg } from "@/lib/format";
+import { sendJobEstimate } from "@/app/actions";
+import ContactButtons from "@/components/ContactButtons";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,12 @@ export default async function OwnerHome() {
     db.user.count({ where: { role: "CUSTOMER" } }),
     db.vehicle.findMany({ select: { make: true } }),
     db.subscription.findMany({ where: { status: "ACTIVE", endsAt: { gt: now } }, include: { plan: true } }),
-    db.job.findMany({ where: { status: { in: ["BOOKED", "REPAIRING", "REPAIRED", "TESTING", "READY"] } }, orderBy: { createdAt: "desc" }, take: 6, include: { vehicle: true, user: true } }),
+    db.job.findMany({
+      where: { status: { in: ["BOOKED", "REPAIRING", "REPAIRED", "TESTING", "READY"] } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { vehicle: true, user: true, items: true, logs: { orderBy: { createdAt: "desc" }, take: 2 } },
+    }),
   ]);
 
   // revenue by month (last 6)
@@ -134,18 +141,115 @@ export default async function OwnerHome() {
       </div>
 
       <div className="card">
-        <div className="row between"><h3>Needs attention</h3><Link href="/owner/jobs" className="btn-link small">All jobs →</Link></div>
-        {recentJobs.length === 0 && <div className="empty">All caught up.</div>}
-        {recentJobs.map((j) => (
-          <div className="job-row" key={j.id}>
-            <div className="grow">
-              <b>{j.code}</b> · {j.vehicle.make} {j.vehicle.model} <span className="reg">{prettyReg(j.vehicle.regNo)}</span>
-              <div className="muted small">{j.user.name} · {fmtDate(j.createdAt)} · {j.query}</div>
-            </div>
-            <span className={`badge ${j.status}`}>{STATUS_LABEL[j.status]}</span>
-            <Link href={`/owner/jobs/${j.id}`} className="btn btn-dark btn-sm">Open</Link>
+        <div className="row between" style={{ alignItems: "baseline", marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Customer service requests &amp; live estimates</h3>
+            <p className="muted small" style={{ margin: "4px 0 0" }}>
+              Send or adjust estimate prices here. Sending an estimate instantly flashes a notification on the customer’s page so they bring their vehicle in.
+            </p>
           </div>
-        ))}
+          <Link href="/owner/jobs" className="btn-link small">All jobs →</Link>
+        </div>
+
+        {recentJobs.length === 0 && <div className="empty">All caught up. No active service requests.</div>}
+
+        <div style={{ display: "grid", gap: 18 }}>
+          {recentJobs.map((j) => (
+            <div
+              key={j.id}
+              style={{
+                border: "1px solid var(--line)",
+                borderRadius: 14,
+                padding: "16px 18px",
+                background: "#fff",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+              }}
+            >
+              <div className="row between" style={{ alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                <div>
+                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <b style={{ fontSize: "1.05rem" }}>{j.code}</b>
+                    <span className="reg">{prettyReg(j.vehicle.regNo)}</span>
+                    <span style={{ fontWeight: 600 }}>{j.vehicle.make} {j.vehicle.model}</span>
+                    <span className={`badge ${j.status}`}>{STATUS_LABEL[j.status]}</span>
+                  </div>
+                  <div className="muted small" style={{ marginTop: 4 }}>
+                    Customer: <b>{j.user.name}</b> · {j.user.phone} · Booked {fmtDate(j.createdAt)}
+                  </div>
+                </div>
+
+                <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                  <ContactButtons
+                    phone={j.user.phone}
+                    email={j.user.email}
+                    subject={`Service Request ${j.code}`}
+                    text={`Hello ${j.user.name}, this is ZZZ AUTO REPAIR regarding your request ${j.code} for your ${j.vehicle.make} ${j.vehicle.model}.`}
+                  />
+                  <Link href={`/owner/jobs/${j.id}`} className="btn btn-dark btn-sm">
+                    Manage &amp; Add Charges →
+                  </Link>
+                </div>
+              </div>
+
+              {/* Customer query */}
+              <div style={{ background: "var(--cream)", padding: "10px 14px", borderRadius: 10, marginBottom: 12 }}>
+                <span className="tiny muted uppercase" style={{ fontWeight: 700, letterSpacing: "0.05em" }}>Customer Request:</span>
+                <div style={{ fontSize: "0.95rem", marginTop: 2 }}>“{j.query}”</div>
+              </div>
+
+              {/* Estimate form & current charges */}
+              <div className="row between" style={{ alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div className="row" style={{ gap: 12, alignItems: "center" }}>
+                  <div>
+                    <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Current Estimate:</span>
+                    <div style={{ fontSize: "1.15rem", fontWeight: 700, color: "var(--accent)" }}>
+                      {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                    </div>
+                  </div>
+                  {j.items.length > 0 && (
+                    <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: 12 }}>
+                      <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Work charges logged:</span>
+                      <div className="mono" style={{ fontWeight: 600 }}>
+                        {money(j.items.reduce((s, it) => s + (it.qty || 1) * (it.unitPrice || 0), 0))} ({j.items.length} items)
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick send estimate form */}
+                <form action={sendJobEstimate} className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <input type="hidden" name="jobId" value={j.id} />
+                  <input
+                    type="number"
+                    name="estMin"
+                    defaultValue={j.estMin}
+                    placeholder="Min $"
+                    style={{ width: 90, padding: "7px 10px", fontSize: "0.88rem" }}
+                    title="Minimum estimated price"
+                    required
+                  />
+                  <input
+                    type="number"
+                    name="estMax"
+                    defaultValue={j.estMax}
+                    placeholder="Max $"
+                    style={{ width: 90, padding: "7px 10px", fontSize: "0.88rem" }}
+                    title="Maximum estimated price (or same as Min)"
+                  />
+                  <input
+                    name="note"
+                    placeholder="Note (e.g. Bring vehicle at 10 AM)"
+                    defaultValue="Estimate sent. Please bring your vehicle to the garage."
+                    style={{ minWidth: 200, maxWidth: 320, padding: "7px 10px", fontSize: "0.88rem" }}
+                  />
+                  <button className="btn btn-primary btn-sm" title="Sends estimate and flashes notification on customer dashboard">
+                    Send estimate 🔔
+                  </button>
+                </form>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </>
   );

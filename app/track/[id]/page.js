@@ -15,13 +15,22 @@ export default async function TrackPage({ params }) {
       vehicle: true,
       items: true,
       logs: { orderBy: { createdAt: "asc" } },
-      bills: { select: { id: true, total: true, paid: true }, orderBy: { id: "desc" } },
+      bills: { select: { id: true, total: true, discount: true, paid: true }, orderBy: { id: "desc" } },
     },
   });
   if (!job || (job.userId !== user.id && user.role !== "OWNER")) notFound();
 
   const initial = {
     status: job.status,
+    estMin: job.estMin,
+    estMax: job.estMax,
+    items: job.items.map((i) => ({
+      id: i.id,
+      description: i.description,
+      category: i.category,
+      qty: i.qty,
+      unitPrice: i.unitPrice,
+    })),
     logs: job.logs.map((l) => ({ status: l.status, note: l.note, at: l.createdAt.toISOString() })),
     bill: job.bills[0] || null,
   };
@@ -43,7 +52,13 @@ export default async function TrackPage({ params }) {
         vehicleLabel={job.vehicle.regNo}
         query={job.query}
         code={job.code}
-        jobItems={job.items.map((i) => ({ description: i.description }))}
+        jobItems={job.items.map((i) => ({
+          id: i.id,
+          description: i.description,
+          category: i.category,
+          qty: i.qty,
+          unitPrice: i.unitPrice,
+        }))}
       />
     </div>
   );

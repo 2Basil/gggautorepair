@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { VEHICLE_TYPES, STATUS_LABEL } from "@/lib/config";
-import { fmtDate, prettyReg } from "@/lib/format";
+import { fmtDate, money, prettyReg } from "@/lib/format";
 import { cancelSubscription } from "@/app/actions";
 import Icon from "@/components/Icon";
 
@@ -13,12 +13,19 @@ export default async function Dashboard({ searchParams }) {
   const sp = await searchParams;
   const [vehicles, jobs, subs] = await Promise.all([
     db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
-    db.job.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, include: { vehicle: true }, take: 20 }),
+    db.job.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      include: { vehicle: true, logs: { orderBy: { createdAt: "desc" }, take: 2 } },
+      take: 20,
+    }),
     db.subscription.findMany({ where: { userId: user.id, status: "ACTIVE", endsAt: { gt: new Date() } }, include: { plan: true } }),
   ]);
   const active = jobs.filter((j) => !["DELIVERED", "CANCELLED"].includes(j.status));
   const past = jobs.filter((j) => ["DELIVERED", "CANCELLED"].includes(j.status));
   const subByVehicle = Object.fromEntries(subs.map((s) => [s.vehicleId, s]));
+
+  const estimateJobs = active.filter((j) => j.status === "BOOKED" || j.logs?.some((l) => l.note?.toLowerCase().includes("estimate")));
 
   return (
     <div className="container page">
@@ -36,6 +43,28 @@ export default async function Dashboard({ searchParams }) {
 
       {sp.subscribed && <div className="alert ok">Plan activated for your vehicle. Our team will contact you to schedule the first visit.</div>}
 
+      {/* Flashing Notification for Service Requests with Estimates */}
+      {estimateJobs.map((j) => (
+        <div key={j.id} className="notif-flash" style={{ marginBottom: 22 }}>
+          <div className="row between" style={{ alignItems: "center", gap: 14 }}>
+            <div className="row" style={{ gap: 12, alignItems: "center" }}>
+              <span className="pulse" style={{ width: 14, height: 14, background: "var(--accent)" }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--accent)" }}>
+                  🔔 Service Estimate Ready — {j.vehicle.make} {j.vehicle.model} ({prettyReg(j.vehicle.regNo)})
+                </div>
+                <div className="small" style={{ marginTop: 2, color: "#3a3f49" }}>
+                  The garage sent an estimate of <b>{money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}</b> for: <i>“{j.query}”</i>. Please bring your vehicle to the garage to begin repair work!
+                </div>
+              </div>
+            </div>
+            <Link href={`/track/${j.id}`} className="btn btn-primary btn-sm" style={{ boxShadow: "0 4px 14px rgba(200,69,43,0.35)" }}>
+              Track live &amp; View estimate →
+            </Link>
+          </div>
+        </div>
+      ))}
+
       {active.length > 0 && (
         <section style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize: "1.3rem" }}>In the garage now</h2>
@@ -45,6 +74,9 @@ export default async function Dashboard({ searchParams }) {
                 <div className="grow">
                   <b>{j.vehicle.make} {j.vehicle.model}</b> <span className="reg">{prettyReg(j.vehicle.regNo)}</span>
                   <div className="muted small">{j.query}</div>
+                </div>
+                <div className="mono small" style={{ fontWeight: 600, color: "var(--accent)" }}>
+                  Est: {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
                 </div>
                 <span className={`badge ${j.status}`}>{STATUS_LABEL[j.status]}</span>
                 <Link href={`/track/${j.id}`} className="btn btn-dark btn-sm">Track live</Link>

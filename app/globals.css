@@ -199,6 +199,20 @@ input[type="checkbox"] { width: auto; }
 .chip-active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 4px 12px -4px rgba(200, 69, 43, 0.5); transform: scale(1.03); }
 .chip-active:hover { background: var(--accent-d); border-color: var(--accent-d); color: #fff; }
 
+/* ---------- notification flash ---------- */
+.notif-flash {
+  background: linear-gradient(135deg, #fffaf0 0%, #fff2e0 100%);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: 0 4px 20px -4px rgba(200, 69, 43, 0.25);
+  animation: notif-flash-pulse 2.5s infinite;
+}
+@keyframes notif-flash-pulse {
+  0%, 100% { border-color: var(--accent); box-shadow: 0 4px 20px -4px rgba(200, 69, 43, 0.25); }
+  50% { border-color: #f59e0b; box-shadow: 0 6px 25px 0 rgba(245, 158, 11, 0.4); }
+}
+
 /* ---------- badges / tables ---------- */
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: var(--cream-2); color: #4a4f59; white-space: nowrap; }
 .badge.BOOKED { background: #e8eef7; color: #2b4a7a; }

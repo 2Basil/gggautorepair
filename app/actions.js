@@ -11,7 +11,7 @@ import { sendOtp, checkOtp, isVerified, otpChannel, normalizePhone } from "@/lib
 import { uniqueUserCode } from "@/lib/userCode";
 import { predict } from "@/lib/pricing";
 import { learnFromBill, loadSamples } from "@/lib/learn";
-import { normReg, billTotals } from "@/lib/format";
+import { normReg, billTotals, money } from "@/lib/format";
 import { STATUS_KEYS, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
 
 const s = (v) => String(v ?? "").trim();
@@ -291,11 +291,24 @@ export async function getJobStatus(jobId) {
   if (!user) return null;
   const job = await db.job.findUnique({
     where: { id: int(jobId) },
-    include: { logs: { orderBy: { createdAt: "asc" } }, bills: { select: { id: true, total: true, paid: true } } },
+    include: {
+      items: true,
+      logs: { orderBy: { createdAt: "asc" } },
+      bills: { select: { id: true, total: true, paid: true } },
+    },
   });
   if (!job || (job.userId !== user.id && user.role !== "OWNER")) return null;
   return {
     status: job.status,
+    estMin: job.estMin,
+    estMax: job.estMax,
+    items: job.items.map((i) => ({
+      id: i.id,
+      description: i.description,
+      category: i.category,
+      qty: i.qty,
+      unitPrice: i.unitPrice,
+    })),
     logs: job.logs.map((l) => ({ status: l.status, note: l.note, at: l.createdAt.toISOString() })),
     bill: job.bills[0] || null,
   };
@@ -340,6 +353,72 @@ export async function updateJobStatus(fd) {
   revalidatePath(`/track/${id}`);
 }
 
+export async function sendJobEstimate(fd) {
+  await requireStaff();
+  const jobId = int(fd.get("jobId"));
+  const minVal = int(fd.get("estMin"));
+  const maxVal = int(fd.get("estMax")) || minVal;
+  const estMin = Math.min(minVal, maxVal);
+  const estMax = Math.max(minVal, maxVal);
+  const note = s(fd.get("note")) || "Estimate provided by garage. Please bring your vehicle in.";
+
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job) return;
+
+  const logNote = `Estimate sent: $${estMin}${estMax !== estMin ? ` – $${estMax}` : ""}. ${note}`;
+  await db.job.update({
+    where: { id: jobId },
+    data: {
+      estMin,
+      estMax,
+      logs: { create: { status: job.status, note: logNote } },
+    },
+  });
+
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
+  revalidatePath(`/owner/jobs/${jobId}`);
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function customerCancelJob(fd) {
+  const user = await requireUser();
+  const jobId = int(fd.get("jobId"));
+  const reason = s(fd.get("reason")) || "Customer stepped back due to estimated / updated charges.";
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job || job.userId !== user.id) return;
+  if (["DELIVERED", "CANCELLED"].includes(job.status)) return;
+  await db.job.update({
+    where: { id: jobId },
+    data: {
+      status: "CANCELLED",
+      logs: { create: { status: "CANCELLED", note: reason } },
+    },
+  });
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function closeJobCase(fd) {
+  await requireStaff();
+  const jobId = int(fd.get("jobId"));
+  const note = s(fd.get("note")) || "Case closed by garage";
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job) return;
+  await db.job.update({
+    where: { id: jobId },
+    data: {
+      status: "CANCELLED",
+      logs: { create: { status: "CANCELLED", note } },
+    },
+  });
+  revalidatePath(`/owner/jobs/${jobId}`);
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/owner/jobs");
+  revalidatePath("/owner");
+}
+
 export async function addJobItem(fd) {
   await requireStaff();
   const jobId = int(fd.get("jobId"));
@@ -350,6 +429,7 @@ export async function addJobItem(fd) {
     data: { jobId, description, category: s(fd.get("category")) || "Repairing", qty: Math.max(1, int(fd.get("qty"), 1)), unitPrice },
   });
   revalidatePath(`/owner/jobs/${jobId}`);
+  revalidatePath(`/track/${jobId}`);
 }
 
 export async function removeJobItem(fd) {
@@ -359,6 +439,71 @@ export async function removeJobItem(fd) {
   if (!item) return;
   await db.jobItem.delete({ where: { id } });
   revalidatePath(`/owner/jobs/${item.jobId}`);
+  revalidatePath(`/track/${item.jobId}`);
+}
+
+export async function generateJobBillFromItems(fd) {
+  await requireStaff();
+  const jobId = int(fd.get("jobId"));
+  const discount = Math.max(0, int(fd.get("discount")));
+  const taxPct = Math.min(40, Math.max(0, int(fd.get("taxPct"), GARAGE.taxPct)));
+  const paid = fd.get("paid") === "on" || fd.get("paid") === "true";
+  const notes = s(fd.get("notes")) || null;
+
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    include: { items: true, vehicle: true },
+  });
+  if (!job) return;
+
+  let items = job.items.map((i) => ({
+    description: i.description,
+    category: i.category,
+    qty: i.qty,
+    unitPrice: i.unitPrice,
+  }));
+  if (!items.length) {
+    items.push({
+      description: job.query || "Garage service",
+      category: "Repairing",
+      qty: 1,
+      unitPrice: job.estMin || 0,
+    });
+  }
+
+  const t = billTotals(items, discount, taxPct);
+  const bill = await db.bill.create({
+    data: {
+      number: `TMP-${Date.now()}`,
+      userId: job.userId,
+      vehicleId: job.vehicleId,
+      jobId: job.id,
+      subtotal: t.subtotal,
+      discount: t.discount,
+      taxPct,
+      tax: t.tax,
+      total: t.total,
+      paid,
+      notes,
+      items: { create: items },
+    },
+  });
+  await db.bill.update({ where: { id: bill.id }, data: { number: `INV-${String(bill.id).padStart(4, "0")}` } });
+  await learnFromBill(bill.id);
+
+  await db.job.update({
+    where: { id: jobId },
+    data: {
+      status: paid ? "DELIVERED" : "READY",
+      logs: { create: { status: paid ? "DELIVERED" : "READY", note: `Final bill ${bill.number} generated: ${money(t.total)} (Discount: ${money(t.discount)})` } },
+    },
+  });
+
+  revalidatePath(`/owner/jobs/${jobId}`);
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/owner/bills");
+  revalidatePath("/bills");
+  redirect(`/owner/bills/${bill.id}`);
 }
 
 export async function createBill(payload) {
