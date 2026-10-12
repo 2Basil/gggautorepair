@@ -18,6 +18,7 @@ const PATHS = {
   logout: "M10 4H5v16h5M15 8l4 4-4 4M19 12H9",
   print: "M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z",
   menu: "M4 7h16M4 12h16M4 17h16",
+  x: "M18 6L6 18M6 6l12 12",
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8, ...rest }) {

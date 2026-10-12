@@ -95,21 +95,45 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
 
           <div className="card">
             <h3 style={{ marginBottom: 18 }}>Progress timeline</h3>
-            <ol className="timeline">
+            <ol className={`timeline ${cancelled ? "cancelled" : ""}`}>
               {STEPS.map((s, i) => {
-                const state = i < idx || done ? "done" : i === idx ? "now" : "todo";
+                const state = cancelled
+                  ? (i <= (idx === -1 ? 0 : idx) ? "done" : "todo")
+                  : (i < idx || done ? "done" : i === idx ? "now" : "todo");
                 const log = logFor(s.key);
                 return (
                   <li key={s.key} className={`tl ${state}`}>
-                    <span className="dot">{state === "done" ? <Icon name="check" size={18} stroke={3} /> : <span style={{ fontWeight: 700, fontSize: 13 }}>{i + 1}</span>}</span>
+                    <span className="dot">
+                      {state === "done" ? (
+                        <Icon name="check" size={18} stroke={3} />
+                      ) : (
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{i + 1}</span>
+                      )}
+                    </span>
                     <div>
                       <h4>{s.title}</h4>
                       <p>{log?.note && log.note !== "Request received" ? log.note : s.desc}</p>
-                      {log && <div className="when">{fmtDateTime(log.at)}</div>}
+                      {log && <div className="when">{fmtDateTime(log.at || log.createdAt)}</div>}
                     </div>
                   </li>
                 );
               })}
+              {cancelled && (
+                <li className="tl cancelled done">
+                  <span className="dot" style={{ background: "#dc2626", borderColor: "#dc2626", color: "#fff" }}>
+                    <Icon name="x" size={18} stroke={3} />
+                  </span>
+                  <div>
+                    <h4 style={{ color: "#dc2626" }}>Cancelled / Stepped back</h4>
+                    <p style={{ color: "#991b1b" }}>
+                      {logFor("CANCELLED")?.note || "This service request was cancelled."}
+                    </p>
+                    {logFor("CANCELLED") && (
+                      <div className="when">{fmtDateTime(logFor("CANCELLED").at || logFor("CANCELLED").createdAt)}</div>
+                    )}
+                  </div>
+                </li>
+              )}
             </ol>
           </div>
         </div>

@@ -345,12 +345,17 @@ export async function updateJobStatus(fd) {
   const id = int(fd.get("jobId"));
   const status = s(fd.get("status"));
   if (!STATUS_KEYS.includes(status)) return;
+  const rawNote = s(fd.get("note"));
+  const note = rawNote ? rawNote.slice(0, 100) : null;
   await db.job.update({
     where: { id },
-    data: { status, logs: { create: { status, note: s(fd.get("note")) || null } } },
+    data: { status, logs: { create: { status, note } } },
   });
   revalidatePath(`/owner/jobs/${id}`);
   revalidatePath(`/track/${id}`);
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
+  revalidatePath("/dashboard");
 }
 
 export async function acceptJobRequest(fd) {

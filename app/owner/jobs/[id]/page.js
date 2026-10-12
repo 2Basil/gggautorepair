@@ -5,6 +5,7 @@ import { STEPS, STATUS_LABEL, CATEGORIES, GARAGE } from "@/lib/config";
 import { fmtDateTime, fmtDate, money, prettyReg } from "@/lib/format";
 import ContactButtons from "@/components/ContactButtons";
 import OwnerBillGenerator from "@/components/OwnerBillGenerator";
+import OwnerTimelineManager from "@/components/OwnerTimelineManager";
 import { updateJobStatus, addJobItem, removeJobItem, sendJobEstimate } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
@@ -124,24 +125,15 @@ export default async function OwnerJob({ params }) {
             </>
           ) : null}
 
-          {/* Update Job Status */}
-          <h4 style={{ margin: "0 0 4px" }}>Update status</h4>
-          <p className="muted small">The customer sees this progress live on their tracker.</p>
-          <form action={updateJobStatus}>
-            <input type="hidden" name="jobId" value={job.id} />
-            <div className="field">
-              <label>New status</label>
-              <select name="status" defaultValue={nextStep?.key || job.status}>
-                {STEPS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                <option value="CANCELLED">Cancelled / Stepped back</option>
-              </select>
+          <div style={{ background: "var(--cream-2)", padding: "10px 14px", borderRadius: 10, marginTop: 12 }}>
+            <div className="tiny uppercase" style={{ fontWeight: 700, letterSpacing: "0.06em", color: "var(--muted)" }}>
+              Live Status Tracking
             </div>
-            <div className="field">
-              <label>Note to customer (optional)</label>
-              <input name="note" placeholder="e.g. Brake pads replaced, vehicle washed, rotor resurfaced" />
+            <div className="row between" style={{ alignItems: "center", marginTop: 4 }}>
+              <span className={`badge ${job.status}`}>{STATUS_LABEL[job.status]}</span>
+              <span className="small muted">Manage timeline &amp; 100-char notes below ↓</span>
             </div>
-            <button className="btn btn-dark btn-block">Update status</button>
-          </form>
+          </div>
         </div>
 
         {/* Activity & Bills */}
@@ -172,6 +164,13 @@ export default async function OwnerJob({ params }) {
           ))}
         </div>
       </div>
+
+      {/* Progress Timeline & Status Controls (exact same structure as customer, with 100 char notes and green/red status line) */}
+      <OwnerTimelineManager
+        jobId={job.id}
+        currentStatus={job.status}
+        logs={job.logs}
+      />
 
       {/* Charges & Work Items Portal */}
       <div className="card">
