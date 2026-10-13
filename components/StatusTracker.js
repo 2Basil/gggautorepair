@@ -1,9 +1,9 @@
 "use client";
 
 import { SHOW_PRICES } from "@/lib/settings";
-import { useEffect, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
-import { getJobStatus, customerCancelJob } from "@/app/actions";
+import { getJobStatus, customerCancelJob, rescheduleJob } from "@/app/actions";
 import { STEPS, STATUS_LABEL } from "@/lib/config";
 import { fmtDateTime, money } from "@/lib/format";
 import Icon from "./Icon";
@@ -18,6 +18,98 @@ function MiniCar() {
       <circle cx="19" cy="27" r="2" fill="#F7F1E3" />
       <circle cx="53" cy="27" r="2" fill="#F7F1E3" />
     </svg>
+  );
+}
+
+/** Minimum date string for the date picker (today) */
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function ReschedulePanel({ jobId }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(rescheduleJob, null);
+
+  useEffect(() => {
+    if (state?.ok) setOpen(false);
+  }, [state]);
+
+  return (
+    <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--line)" }}>
+      {state?.ok && (
+        <div style={{ background: "#d1fae5", border: "1px solid #6ee7b7", borderRadius: 10, padding: "10px 14px", fontSize: "0.85rem", color: "#065f46", marginBottom: 10 }}>
+          ✅ {state.ok}
+        </div>
+      )}
+      <details open={open} onToggle={(e) => setOpen(e.target.open)} className="small">
+        <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, userSelect: "none" }}>
+          📅 Request a reschedule
+        </summary>
+        <div style={{ marginTop: 10, padding: "16px", background: "linear-gradient(135deg,#f0f9ff,#e0f2fe)", borderRadius: 12, border: "1px solid #bae6fd" }}>
+          <p className="tiny muted" style={{ marginBottom: 12 }}>
+            Need a different date or time? Submit a reschedule request and the garage will confirm availability shortly.
+          </p>
+          <form action={action} style={{ display: "grid", gap: 10 }}>
+            <input type="hidden" name="jobId" value={jobId} />
+            {state?.error && (
+              <div style={{ background: "#fff1f0", borderRadius: 8, padding: "8px 12px", color: "#b91c1c", fontSize: "0.82rem" }}>{state.error}</div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: "0.8rem", marginBottom: 4, color: "#0369a1" }}>
+                  Preferred date *
+                </label>
+                <input
+                  type="date"
+                  name="preferredDate"
+                  min={todayStr()}
+                  required
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #bae6fd", fontSize: "0.88rem" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: "0.8rem", marginBottom: 4, color: "#0369a1" }}>
+                  Preferred time
+                </label>
+                <select
+                  name="preferredTime"
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #bae6fd", fontSize: "0.88rem" }}
+                >
+                  <option value="">Any time</option>
+                  <option value="Morning (9am–12pm)">Morning (9am–12pm)</option>
+                  <option value="Afternoon (12pm–4pm)">Afternoon (12pm–4pm)</option>
+                  <option value="Evening (4pm–7pm)">Evening (4pm–7pm)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: "0.8rem", marginBottom: 4, color: "#0369a1" }}>
+                Note (optional)
+              </label>
+              <input
+                type="text"
+                name="note"
+                placeholder="Any additional info for the garage…"
+                maxLength={200}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #bae6fd", fontSize: "0.88rem" }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={pending}
+              style={{
+                padding: "10px 16px", background: pending ? "#93c5fd" : "#0284c7",
+                color: "#fff", border: "none", borderRadius: 8,
+                fontWeight: 700, cursor: pending ? "not-allowed" : "pointer", fontSize: "0.9rem",
+              }}
+            >
+              {pending ? "Sending request…" : "📅 Send reschedule request"}
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -141,7 +233,7 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
         <div className="stack">
           <div className="card">
             <h3>Your service request</h3>
-            <p className="muted" style={{ marginBottom: 0 }}>“{query}”</p>
+            <p className="muted" style={{ marginBottom: 0 }}>"{query}"</p>
           </div>
 
           <div className="card">
@@ -227,8 +319,13 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
                 </div>
                 <div className="row between" style={{ marginTop: 8, alignItems: "center" }}>
                   <span className={`badge ${data.bill.paid ? "paid" : "unpaid"}`}>{data.bill.paid ? "Paid" : "Pay at garage"}</span>
-                  <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-sm">View final bill →</Link>
+                  <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-sm">View &amp; Pay online →</Link>
                 </div>
+                {!data.bill.paid && (
+                  <p className="tiny muted" style={{ marginTop: 8 }}>
+                    You can pay online on the bill page using any credit/debit card.
+                  </p>
+                )}
               </div>
             ) : (
               <p className="tiny muted" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -236,7 +333,12 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
               </p>
             )}
 
-            {/* 4. Option to step back if customer doesn't want to afford additional money */}
+            {/* 4. Reschedule option */}
+            {!cancelled && !done && (
+              <ReschedulePanel jobId={jobId} />
+            )}
+
+            {/* 5. Option to step back if customer doesn't want to afford additional money */}
             {!cancelled && !done && (
               <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--line)" }}>
                 <details className="small">

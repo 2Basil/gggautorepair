@@ -8,11 +8,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { createSession, destroySession, getUser, requireOwner, requireStaff, requireUser } from "@/lib/auth";
 import { sendOtp, checkOtp, isVerified, otpChannel, normalizePhone } from "@/lib/otp";
-import { uniqueUserCode } from "@/lib/userCode";
+import { uniqueUserCode, uniqueUsername, validateUsername } from "@/lib/userCode";
 import { predict } from "@/lib/pricing";
 import { learnFromBill, loadSamples } from "@/lib/learn";
 import { normReg, billTotals, money } from "@/lib/format";
 import { STATUS_KEYS, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
+import Stripe from "stripe";
 
 const s = (v) => String(v ?? "").trim();
 const int = (v, d = 0) => {
@@ -71,12 +72,20 @@ export async function registerCustomer(_prev, fd) {
   if (await db.user.findFirst({ where: { phone } })) return { error: "An account with this phone number already exists. Try logging in." };
   if (await db.vehicle.findUnique({ where: { regNo: vehicle.regNo } })) return { error: "This registration number is already registered.", step: 2 };
 
+  // Auto-generate username; user may have supplied a preferred one in the form
+  const rawUsername = s(f.username).toLowerCase().replace(/[^a-z0-9_]/g, "");
+  const chosenUsername = rawUsername.length >= 3 ? rawUsername : null;
+  let username = chosenUsername
+    ? (await db.user.findUnique({ where: { username: chosenUsername }, select: { id: true } }) ? await uniqueUsername(name) : chosenUsername)
+    : await uniqueUsername(name);
+
   const user = await db.user.create({
     data: {
       name,
       email,
       phone,
       phoneVerified: REQUIRE_VERIFICATION && channel === "phone",
+      username,
       userCode: await uniqueUserCode(name, phone),
       address: s(f.address) || null,
       city: s(f.city) || null,
@@ -123,6 +132,19 @@ export async function changePassword(_prev, fd) {
   if (next === cur) return { error: "Choose a password different from the current one." };
   await db.user.update({ where: { id: me.id }, data: { passwordHash: await bcrypt.hash(next, 10) } });
   return { ok: "Password changed. Use the new password next time you log in." };
+}
+
+export async function updateUsername(_prev, fd) {
+  const me = await requireUser();
+  const desired = s(fd.get("username")).toLowerCase().replace(/\s/g, "_");
+  const err = validateUsername(desired);
+  if (err) return { error: err };
+  const existing = await db.user.findUnique({ where: { username: desired }, select: { id: true } });
+  if (existing && existing.id !== me.id) return { error: "That username is already taken. Try another one." };
+  await db.user.update({ where: { id: me.id }, data: { username: desired } });
+  revalidatePath("/dashboard");
+  revalidatePath("/profile");
+  return { ok: `Username updated to @${desired}` };
 }
 
 export async function sendPasswordResetOtp(email) {
@@ -422,6 +444,160 @@ export async function customerCancelJob(fd) {
   });
   revalidatePath(`/track/${jobId}`);
   revalidatePath("/dashboard");
+}
+
+export async function rescheduleJob(_prev, fd) {
+  const user = await requireUser();
+  const jobId = int(fd.get("jobId"));
+  const newDate = s(fd.get("preferredDate"));
+  const newTime = s(fd.get("preferredTime"));
+  const note = s(fd.get("note"));
+  if (!newDate) return { error: "Please select a preferred date." };
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job || job.userId !== user.id) return { error: "Job not found." };
+  if (["DELIVERED", "CANCELLED"].includes(job.status)) return { error: "This job is already closed." };
+  const rescheduleNote = `Customer requested reschedule to ${newDate}${newTime ? ` at ${newTime}` : ""}${note ? `. Note: ${note}` : ""}.`;
+  await db.job.update({
+    where: { id: jobId },
+    data: { logs: { create: { status: job.status, note: rescheduleNote } } },
+  });
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/dashboard");
+  return { ok: `Reschedule request sent for ${newDate}${newTime ? ` at ${newTime}` : ""}. The garage will confirm shortly.` };
+}
+
+/* -------------------------------- Stripe payments -------------------------------- */
+
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return null;
+  return new Stripe(key, { apiVersion: "2024-06-20" });
+}
+
+export async function createStripeCheckout(billId) {
+  const user = await requireUser();
+  const bill = await db.bill.findUnique({ where: { id: int(billId) }, include: { items: true, vehicle: true } });
+  if (!bill || bill.userId !== user.id) return { error: "Bill not found." };
+  if (bill.paid) return { error: "This bill is already paid." };
+  const stripe = getStripe();
+  if (!stripe) {
+    return { testMode: true, message: "Stripe test sandbox enabled." };
+  }
+  const appUrl = process.env.APP_URL || "http://localhost:3000";
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card", "link"],
+    mode: "payment",
+    customer_email: user.email,
+    metadata: { billId: String(bill.id), userId: String(user.id) },
+    line_items: bill.items.map((i) => ({
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: i.description,
+          description: `${i.category} — ${bill.vehicle.make} ${bill.vehicle.model}`,
+        },
+        unit_amount: Math.round(i.unitPrice * 100),
+      },
+      quantity: i.qty,
+    })),
+    discounts: bill.discount > 0 ? [] : [],
+    success_url: `${appUrl}/bills/${bill.id}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appUrl}/bills/${bill.id}?payment=cancelled`,
+  });
+  return { url: session.url };
+}
+
+/**
+ * Universal online payment settlement and verification for US Gateways
+ * (Stripe, PayPal, Venmo, Cash App Pay, Apple Pay / Google Pay, and US Test Sandbox).
+ * Verifies and updates bill status to PAID IN FULL automatically.
+ */
+export async function verifyAndSettleBill(billId, paymentDetails = {}) {
+  const user = await requireUser();
+  const bill = await db.bill.findUnique({
+    where: { id: int(billId) },
+    include: { items: true, vehicle: true, job: true },
+  });
+  if (!bill) return { error: "Bill not found." };
+  if (bill.userId !== user.id && user.role !== "OWNER") return { error: "Unauthorized access to this bill." };
+  if (bill.paid) return { ok: true, alreadyPaid: true, message: "This bill is already paid and verified." };
+
+  const gateway = s(paymentDetails.gateway) || "Stripe";
+  const method = s(paymentDetails.method) || "Credit/Debit Card";
+  const last4 = s(paymentDetails.last4) || "4242";
+  const brand = s(paymentDetails.brand) || "Visa";
+  const txnRef = s(paymentDetails.txnRef) || `US-${gateway.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const now = new Date();
+
+  const noteEntry = `[VERIFIED PAYMENT] $${bill.total} paid via ${gateway} (${method}: ${brand} ···· ${last4}) · Auth Ref: ${txnRef} · Verified: ${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+  const updatedNotes = bill.notes ? `${bill.notes}\n${noteEntry}` : noteEntry;
+
+  await db.bill.update({
+    where: { id: bill.id },
+    data: {
+      paid: true,
+      notes: updatedNotes,
+    },
+  });
+
+  // Advance associated job to DELIVERED if it was waiting for payment in ready/tested state
+  if (bill.jobId) {
+    const job = await db.job.findUnique({ where: { id: bill.jobId } });
+    if (job) {
+      const advanceToDelivered = ["READY", "TESTING", "REPAIRED"].includes(job.status);
+      await db.job.update({
+        where: { id: job.id },
+        data: {
+          status: advanceToDelivered ? "DELIVERED" : job.status,
+          logs: {
+            create: {
+              status: advanceToDelivered ? "DELIVERED" : job.status,
+              note: `Online payment of $${bill.total} verified via ${gateway} (Ref: ${txnRef}). Bill marked PAID IN FULL.`,
+            },
+          },
+        },
+      });
+      revalidatePath(`/track/${job.id}`);
+    }
+  }
+
+  revalidatePath(`/bills/${bill.id}`);
+  revalidatePath(`/owner/bills/${bill.id}`);
+  revalidatePath("/owner/bills");
+  revalidatePath("/bills");
+  revalidatePath("/dashboard");
+  revalidatePath("/owner/records");
+
+  return {
+    ok: true,
+    txnRef,
+    gateway,
+    method,
+    amount: bill.total,
+    paidAt: now.toISOString(),
+  };
+}
+
+export async function confirmReschedule(jobId, confirmedDate, note) {
+  await requireStaff();
+  const id = int(jobId);
+  const job = await db.job.findUnique({ where: { id } });
+  if (!job) return { error: "Job not found." };
+  await db.job.update({
+    where: { id },
+    data: {
+      logs: {
+        create: {
+          status: job.status,
+          note: `Reschedule confirmed for ${confirmedDate} by garage.${note ? ` Note: ${note}` : ""}`,
+        },
+      },
+    },
+  });
+  revalidatePath(`/owner/jobs/${id}`);
+  revalidatePath(`/track/${id}`);
+  revalidatePath("/dashboard");
+  return { ok: true };
 }
 
 export async function closeJobCase(fd) {

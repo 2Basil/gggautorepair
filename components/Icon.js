@@ -19,6 +19,8 @@ const PATHS = {
   print: "M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z",
   menu: "M4 7h16M4 12h16M4 17h16",
   x: "M18 6L6 18M6 6l12 12",
+  "at-sign": "M16 8a6 6 0 1 1-2.9 11.2A5 5 0 1 0 12 7v1a6 6 0 0 1 6 6v.5a2.5 2.5 0 0 1-5 0V12",
+  lock: "M5 11V7a7 7 0 0 1 14 0v4M5 11a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2H5zm7 4v2",
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8, ...rest }) {

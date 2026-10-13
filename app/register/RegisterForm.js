@@ -1,8 +1,19 @@
 "use client";
 
-import { startTransition, useActionState, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useRef, useState, useTransition, useEffect } from "react";
 import { registerCustomer, sendPhoneOtp, verifyPhoneOtp } from "@/app/actions";
 import VehicleFields from "@/components/VehicleFields";
+
+/** Build a username slug from any string — mirrors the server-side buildUsername */
+function slugify(str) {
+  return String(str || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 28) || "";
+}
 
 export default function RegisterForm({ channel = "email", verify = true }) {
   const [state, action, pending] = useActionState(registerCustomer, null);
@@ -10,6 +21,9 @@ export default function RegisterForm({ channel = "email", verify = true }) {
   const formRef = useRef(null);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameEdited, setUsernameEdited] = useState(false);
   const byEmail = verify && channel === "email";
   const target = (byEmail ? email : phone).trim();
   const [otpSent, setOtpSent] = useState(false);
@@ -18,6 +32,15 @@ export default function RegisterForm({ channel = "email", verify = true }) {
   const [otpMsg, setOtpMsg] = useState(null); // { type: "err" | "ok", text }
   const [otpBusy, startOtp] = useTransition();
   const verified = !verify || (verifiedPhone !== "" && verifiedPhone === target);
+
+  // Auto-suggest username from name when user hasn't manually edited it
+  useEffect(() => {
+    if (!usernameEdited) {
+      setUsername(slugify(name));
+    }
+  }, [name, usernameEdited]);
+
+  const usernameValid = username.length === 0 || (/^[a-z0-9_]{3,28}$/.test(username));
 
   function sendCode() {
     setOtpMsg(null);
@@ -67,8 +90,53 @@ export default function RegisterForm({ channel = "email", verify = true }) {
         <div className="form-grid">
           <div className="field full">
             <label htmlFor="name">Full name *</label>
-            <input id="name" name="name" autoComplete="name" required />
+            <input
+              id="name" name="name" autoComplete="name" required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
+
+          {/* Username field */}
+          <div className="field full">
+            <label htmlFor="username">
+              Username *
+              <span className="muted" style={{ fontWeight: 400, marginLeft: 6, fontSize: "0.82em" }}>
+                lowercase letters, numbers, underscores
+              </span>
+            </label>
+            <div className="row" style={{ gap: 0, position: "relative" }}>
+              <span style={{
+                position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                color: "var(--muted)", fontWeight: 600, pointerEvents: "none", userSelect: "none",
+                fontSize: "0.95rem",
+              }}>@</span>
+              <input
+                id="username"
+                name="username"
+                autoComplete="username"
+                required
+                minLength={3}
+                maxLength={28}
+                pattern="[a-z0-9_]{3,28}"
+                title="3-28 characters: lowercase letters, numbers, underscores"
+                value={username}
+                style={{ paddingLeft: 28, flex: 1 }}
+                onChange={(e) => {
+                  setUsernameEdited(true);
+                  setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""));
+                }}
+              />
+            </div>
+            {username.length > 0 && (
+              <div className="tiny" style={{ marginTop: 4, color: usernameValid ? "var(--muted)" : "var(--accent)" }}>
+                {usernameValid
+                  ? `Your profile will be @${username}`
+                  : "3-28 chars: lowercase letters, numbers, underscores only."}
+              </div>
+            )}
+          </div>
+
           <div className={byEmail ? "field full" : "field"}>
             <label htmlFor="email">Email *{byEmail ? " (we send a verification code here)" : ""}</label>
             {byEmail ? (

@@ -33,9 +33,13 @@ export default async function Dashboard({ searchParams }) {
         <div>
           <span className="eyebrow">Dashboard</span>
           <h1>Hi {user.name.split(" ")[0]} 👋</h1>
+          {user.username && (
+            <div className="muted small" style={{ marginTop: 2 }}>@{user.username}</div>
+          )}
           {user.userCode && <div className="muted small">Customer ID: <span className="reg">{user.userCode}</span></div>}
         </div>
         <div className="row">
+          <Link href="/profile" className="btn btn-ghost"><Icon name="user" size={18} /> My Profile</Link>
           <Link href="/vehicles/new" className="btn btn-ghost"><Icon name="plus" size={18} /> Add vehicle</Link>
           <Link href="/book" className="btn btn-primary"><Icon name="wrench" size={18} /> Book a service</Link>
         </div>
@@ -78,8 +82,10 @@ export default async function Dashboard({ searchParams }) {
                 <div className="mono small" style={{ fontWeight: 600, color: "var(--accent)" }}>
                   Est: {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
                 </div>
-                <span className={`badge ${j.status}`}>{STATUS_LABEL[j.status]}</span>
-                <Link href={`/track/${j.id}`} className="btn btn-dark btn-sm">Track live</Link>
+                <div className="row" style={{ gap: 6 }}>
+                  <Link href={`/track/${j.id}`} className="btn btn-ghost btn-sm">📅 Reschedule</Link>
+                  <Link href={`/track/${j.id}`} className="btn btn-dark btn-sm">Track live</Link>
+                </div>
               </div>
             ))}
           </div>

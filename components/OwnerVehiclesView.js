@@ -101,6 +101,8 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
         {displayedJobs.map((j) => {
           const isRequested = j.status === "BOOKED";
           const subtotal = (j.items || []).reduce((s, it) => s + (it.qty || 1) * (it.unitPrice || 0), 0);
+          const paidBill = (j.bills || []).find((b) => b.paid);
+          const isPaid = !!paidBill;
 
           return (
             <div

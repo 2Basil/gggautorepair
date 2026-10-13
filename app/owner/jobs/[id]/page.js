@@ -54,6 +54,49 @@ export default async function OwnerJob({ params }) {
         </div>
       </div>
 
+      {/* Reschedule alert banner if customer sent a reschedule request */}
+      {(() => {
+        const rescheduleLog = job.logs.find((l) => l.note?.toLowerCase().includes("reschedule"));
+        if (!rescheduleLog) return null;
+        return (
+          <div style={{
+            background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
+            border: "2px solid #3b82f6",
+            borderRadius: 16,
+            padding: "16px 20px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+            boxShadow: "0 4px 14px rgba(59, 130, 246, 0.12)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: "1.8rem" }}>📅</span>
+              <div>
+                <div style={{ fontWeight: 800, color: "#1e40af", fontSize: "0.98rem" }}>
+                  Customer Reschedule Request
+                </div>
+                <div style={{ color: "#1e3a8a", fontSize: "0.88rem", marginTop: 2 }}>
+                  {rescheduleLog.note}
+                </div>
+                <div style={{ color: "#64748b", fontSize: "0.74rem", marginTop: 2 }}>
+                  Requested {fmtDateTime(rescheduleLog.createdAt)}
+                </div>
+              </div>
+            </div>
+            <a
+              href={`tel:${job.user.phone}`}
+              className="btn btn-dark btn-sm"
+              style={{ fontSize: "0.82rem" }}
+            >
+              📞 Call to Confirm
+            </a>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-2" style={{ alignItems: "start", marginBottom: 18 }}>
         {/* Customer request & Status */}
         <div className="card">

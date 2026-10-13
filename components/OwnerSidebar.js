@@ -76,7 +76,7 @@ export default function OwnerSidebar({ owner = true, pendingRequests = 0 }) {
             className={`sidebar-link ${isActive("/owner/records") ? "active" : ""}`}
           >
             <Icon name="search" size={17} />
-            <span>Customer Records</span>
+            <span>Customer History &amp; Records</span>
           </Link>
         </div>
       </div>
