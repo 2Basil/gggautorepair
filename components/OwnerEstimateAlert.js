@@ -29,7 +29,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
 
   // Filter for jobs that are BOOKED / waiting for quote or starting estimate
   const pendingQuotes = requests.filter((r) => r.status === "BOOKED" || r.estMin === 0);
-  const unquotedCount = pendingQuotes.filter((r) => !r.estMin || r.estMin === 0).length;
+  const unquotedCount = pendingQuotes.filter((r) => !r.ownerQuoted || !r.estMin || r.estMin === 0).length;
 
   if (pendingQuotes.length === 0) return null;
 
@@ -75,7 +75,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
         {/* Requests List */}
         <div style={{ display: "grid", gap: 14 }}>
           {pendingQuotes.map((j) => {
-            const needsQuote = !j.estMin || j.estMin === 0;
+            const needsQuote = !j.ownerQuoted && (!j.estMin || j.estMin === 0);
             return (
               <div
                 key={j.id}
@@ -108,7 +108,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                         </span>
                       ) : (
                         <span style={{ background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.72rem", padding: "2px 8px", borderRadius: 6 }}>
-                          ✓ QUOTED {money(j.estMin)}{j.estMax !== j.estMin ? ` – ${money(j.estMax)}` : ""}
+                          ✓ ESTIMATE SENT {money(j.estMin)}{j.estMax !== j.estMin ? ` – ${money(j.estMax)}` : ""}
                         </span>
                       )}
                       <b style={{ fontSize: "1.02rem", color: "#111827" }}>
@@ -171,7 +171,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                     <input
                       type="number"
                       name="estMin"
-                      defaultValue={j.estMin > 0 ? j.estMin : ""}
+                      defaultValue={j.ownerQuoted && j.estMin > 0 ? j.estMin : ""}
                       placeholder="Min $"
                       required
                       disabled={busy && busyJobId === j.id}
@@ -189,7 +189,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                     <input
                       type="number"
                       name="estMax"
-                      defaultValue={j.estMax > 0 ? j.estMax : ""}
+                      defaultValue={j.ownerQuoted && j.estMax > 0 ? j.estMax : ""}
                       placeholder="Max $"
                       disabled={busy && busyJobId === j.id}
                       style={{
@@ -206,8 +206,8 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
 
                   <input
                     name="note"
-                    placeholder="Note to customer (e.g. Estimate quoted. Bring car to garage)"
-                    defaultValue="Estimate quoted. Please bring your vehicle in for repair."
+                    placeholder="Small note with estimate (e.g. Includes inspection & parts. Ready in 2 hours)"
+                    defaultValue={j.ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service."}
                     disabled={busy && busyJobId === j.id}
                     style={{
                       flex: 1,

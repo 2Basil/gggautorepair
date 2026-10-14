@@ -130,9 +130,9 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
           }}
         >
           <div style={{ fontWeight: 700, color: "var(--accent)", marginBottom: 2 }}>
-            📋 Manual Owner Estimate
+            📋 Manual Garage Owner Estimate
           </div>
-          Our garage owner will personally review your vehicle issue and send you an accurate price estimate. You can review and confirm the quote before any work starts.
+          No automatically generated prices. When you click <b>Estimate My Bill</b>, our garage owner will personally review your vehicle issue and send you an estimated price quote with a note. You can then review the price and choose to book the service or decline.
         </div>
 
         {error && <div className="alert err">{error}</div>}
@@ -141,9 +141,9 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
           type="submit"
           className="btn btn-primary btn-block"
           disabled={pending || query.trim().length < 3}
-          style={{ fontSize: "1.02rem", padding: "14px 20px" }}
+          style={{ fontSize: "1.05rem", padding: "14px 20px" }}
         >
-          {pending ? "Submitting Request…" : "Get Estimate from Garage Owner 🔔"}
+          {pending ? "Sending Estimate Request to Owner…" : "Estimate My Bill 🔔"}
         </button>
       </form>
     </div>

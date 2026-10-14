@@ -189,20 +189,25 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                       </div>
                     </div>
                   ) : isRequested ? (
-                    <div>
-                      <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Starting Estimate:</span>
-                      <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
-                        {j.estMin > 0 ? (
-                          <span style={{ color: "var(--accent)" }}>
-                            {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
-                          </span>
-                        ) : (
-                          <span className="badge" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700, padding: "3px 8px" }}>
-                            ⚠️ Manual Quote Needed
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    (() => {
+                      const ownerQuoted = (j.logs || []).some((l) => l.note?.startsWith("Estimate sent:"));
+                      return (
+                        <div>
+                          <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Starting Estimate:</span>
+                          <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+                            {ownerQuoted && j.estMin > 0 ? (
+                              <span style={{ color: "var(--accent)" }}>
+                                {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700, padding: "3px 8px" }}>
+                                ⚠️ Manual Quote Needed
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div>
                       <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Logged Charges:</span>
@@ -223,43 +228,54 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                       View Paid Bill →
                     </Link>
                   ) : isRequested ? (
-                    <>
-                      {/* One-click Accept & Start Repair */}
-                      <form action={acceptJobRequest}>
-                        <input type="hidden" name="jobId" value={j.id} />
-                        <button className="btn btn-ghost btn-sm" style={{ fontWeight: 600 }}>
-                          Accept Vehicle 🔧
-                        </button>
-                      </form>
+                    (() => {
+                      const ownerQuoted = (j.logs || []).some((l) => l.note?.startsWith("Estimate sent:"));
+                      return (
+                        <>
+                          {/* One-click Accept & Start Repair */}
+                          <form action={acceptJobRequest}>
+                            <input type="hidden" name="jobId" value={j.id} />
+                            <button className="btn btn-ghost btn-sm" style={{ fontWeight: 600 }}>
+                              Accept Vehicle 🔧
+                            </button>
+                          </form>
 
-                      {/* Quick Send Estimate Form (manual owner quote) */}
-                      <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
-                        <input type="hidden" name="jobId" value={j.id} />
-                        <input
-                          type="number"
-                          name="estMin"
-                          defaultValue={j.estMin > 0 ? j.estMin : ""}
-                          placeholder="Min $"
-                          style={{ width: 85, padding: "6px 8px", fontSize: "0.85rem", border: j.estMin === 0 ? "1.5px solid var(--accent)" : "1px solid var(--line)" }}
-                          title="Minimum estimate"
-                          required
-                        />
-                        <input
-                          type="number"
-                          name="estMax"
-                          defaultValue={j.estMax > 0 ? j.estMax : ""}
-                          placeholder="Max $"
-                          style={{ width: 85, padding: "6px 8px", fontSize: "0.85rem" }}
-                          title="Maximum estimate"
-                        />
-                        <button
-                          className={`btn btn-sm ${j.estMin === 0 ? "btn-primary" : "btn-dark"}`}
-                          title="Send manual price estimate to customer"
-                        >
-                          {j.estMin === 0 ? "Quote Price 🔔" : "Update Est 🔔"}
-                        </button>
-                      </form>
-                    </>
+                          {/* Quick Send Estimate Form (manual owner quote) */}
+                          <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
+                            <input type="hidden" name="jobId" value={j.id} />
+                            <input
+                              type="number"
+                              name="estMin"
+                              defaultValue={ownerQuoted && j.estMin > 0 ? j.estMin : ""}
+                              placeholder="Min $"
+                              style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem", border: !ownerQuoted ? "1.5px solid var(--accent)" : "1px solid var(--line)" }}
+                              title="Minimum estimate"
+                              required
+                            />
+                            <input
+                              type="number"
+                              name="estMax"
+                              defaultValue={ownerQuoted && j.estMax > 0 ? j.estMax : ""}
+                              placeholder="Max $"
+                              style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem" }}
+                              title="Maximum estimate"
+                            />
+                            <input
+                              name="note"
+                              defaultValue={ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service."}
+                              placeholder="Note with estimate"
+                              style={{ width: 140, padding: "6px 8px", fontSize: "0.82rem" }}
+                            />
+                            <button
+                              className={`btn btn-sm ${!ownerQuoted ? "btn-primary" : "btn-dark"}`}
+                              title="Send manual price estimate to customer"
+                            >
+                              {!ownerQuoted ? "Quote Price 🔔" : "Update Est 🔔"}
+                            </button>
+                          </form>
+                        </>
+                      );
+                    })()
                   ) : (
                     <>
                       <Link href={`/owner/jobs/${j.id}`} className="btn btn-ghost btn-sm">

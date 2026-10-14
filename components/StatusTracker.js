@@ -137,9 +137,15 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
   const subtotal = items.reduce((acc, i) => acc + (Number(i.qty) || 1) * (Number(i.unitPrice) || 0), 0);
 
   // Check if owner sent a custom estimate note
-  const estimateLog = [...(data.logs || [])].reverse().find((l) => l.note?.toLowerCase().includes("estimate"));
-  const customerAccepted = (data.logs || []).some((l) => l.note?.toLowerCase().includes("customer accepted"));
-  const hasEstimate = currentEstMin > 0 || currentEstMax > 0;
+  // Check if owner sent a manual estimate quote
+  const estimateLog = [...(data.logs || [])].reverse().find((l) => l.note?.toLowerCase().includes("estimate sent:"));
+  const customerAccepted = (data.logs || []).some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
+  const hasEstimate = !!estimateLog && (currentEstMin > 0 || currentEstMax > 0);
+
+  // Extract owner note text (stripping the price prefix)
+  const ownerNoteText = estimateLog?.note
+    ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "")
+    : "";
 
   return (
     <div>
@@ -155,48 +161,80 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
             borderColor: hasEstimate ? "rgba(200, 69, 43, 0.3)" : "#f59e0b",
           }}
         >
-          <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <div className="row" style={{ gap: 12, alignItems: "center" }}>
+          <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+            <div className="row" style={{ gap: 12, alignItems: "flex-start", flex: 1, minWidth: 260 }}>
               <span
                 className="pulse"
-                style={{ width: 12, height: 12, background: hasEstimate ? "var(--accent)" : "#d97706" }}
+                style={{ width: 14, height: 14, marginTop: 4, background: hasEstimate ? "var(--accent)" : "#d97706" }}
               />
               <div>
                 <div
                   style={{
                     fontWeight: 800,
-                    fontSize: "1.06rem",
+                    fontSize: "1.1rem",
                     color: hasEstimate ? "var(--accent)" : "#b45309",
                   }}
                 >
                   {hasEstimate
-                    ? `🔔 Owner's Estimate: ${money(currentEstMin)}${currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}`
+                    ? `🔔 Garage Owner's Estimate: ${money(currentEstMin)}${currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}`
                     : "⏳ Estimate Request Sent — Waiting for Owner's Price Quote"}
                 </div>
-                <div className="small muted" style={{ marginTop: 2, color: hasEstimate ? undefined : "#78350f" }}>
+
+                {hasEstimate && ownerNoteText && (
+                  <div
+                    style={{
+                      background: "rgba(200,69,43,0.06)",
+                      borderLeft: "3px solid var(--accent)",
+                      borderRadius: "0 6px 6px 0",
+                      padding: "6px 10px",
+                      marginTop: 6,
+                      fontSize: "0.88rem",
+                      color: "#431407",
+                    }}
+                  >
+                    <b>Owner's Note:</b> <i>“{ownerNoteText}”</i>
+                  </div>
+                )}
+
+                <div className="small muted" style={{ marginTop: 4, color: hasEstimate ? "#4b5563" : "#78350f" }}>
                   {hasEstimate
-                    ? estimateLog?.note
-                      ? estimateLog.note
-                      : "Please bring your vehicle to the garage. You can see the initial estimate and all work charges logged below."
-                    : "The garage owner is reviewing your vehicle issue and will quote your price estimate shortly. Once quoted, you can accept or decline."}
+                    ? customerAccepted
+                      ? "You accepted this estimate and booked your service. Please bring your vehicle to the garage."
+                      : "Review the owner's price quote above. You can now Book your service or Decline if you do not wish to proceed."
+                    : "Our garage owner is personally reviewing your vehicle request and will quote an estimated price with a note. Once received, you can choose whether to Book or Decline."}
                 </div>
               </div>
             </div>
 
-            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {hasEstimate && !customerAccepted && (
-                <form action={customerAcceptEstimate}>
-                  <input type="hidden" name="jobId" value={jobId} />
-                  <button className="btn btn-primary btn-sm" style={{ fontWeight: 700 }}>
-                    ✓ Accept Estimate &amp; Confirm
-                  </button>
-                </form>
+                <>
+                  <form action={customerAcceptEstimate}>
+                    <input type="hidden" name="jobId" value={jobId} />
+                    <button className="btn btn-primary btn-sm" style={{ fontWeight: 800, padding: "8px 16px" }}>
+                      ✓ Book My Service &amp; Accept Estimate
+                    </button>
+                  </form>
+
+                  <form action={customerCancelJob}>
+                    <input type="hidden" name="jobId" value={jobId} />
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: "#b91c1c", borderColor: "#fca5a5" }}
+                      title="Decline this estimate"
+                    >
+                      ✕ Decline
+                    </button>
+                  </form>
+                </>
               )}
+
               {customerAccepted && (
-                <span className="badge paid" style={{ fontSize: "0.82rem", fontWeight: 700 }}>
-                  ✓ Estimate Accepted
+                <span className="badge paid" style={{ fontSize: "0.84rem", fontWeight: 800, padding: "5px 12px" }}>
+                  ✓ Service Booked &amp; Estimate Accepted
                 </span>
               )}
+
               <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
             </div>
           </div>
@@ -298,15 +336,28 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
             ) : SHOW_PRICES.estimate && !done && (
               <div style={{ background: "var(--cream-2)", padding: "12px 16px", borderRadius: 12, marginBottom: 14 }}>
                 <div className="tiny muted uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>1. Garage Estimate (Starting Phase)</div>
-                <div className="row between" style={{ alignItems: "baseline", marginTop: 4 }}>
-                  <b style={{ fontSize: "1.35rem", color: "var(--accent)" }}>
-                    {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
-                  </b>
-                  <span className="tiny muted">Initial quote</span>
-                </div>
-                <p className="tiny muted" style={{ margin: "4px 0 0" }}>
-                  Estimated range for your vehicle. As our team inspects &amp; repairs, specific work items appear below.
-                </p>
+                {hasEstimate ? (
+                  <>
+                    <div className="row between" style={{ alignItems: "baseline", marginTop: 4 }}>
+                      <b style={{ fontSize: "1.35rem", color: "var(--accent)" }}>
+                        {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
+                      </b>
+                      <span className="tiny muted">Owner's manual quote</span>
+                    </div>
+                    {ownerNoteText && (
+                      <p className="tiny" style={{ margin: "4px 0 0", color: "#431407" }}>
+                        Note: <i>“{ownerNoteText}”</i>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ marginTop: 4 }}>
+                    <b style={{ fontSize: "1.05rem", color: "#b45309" }}>⏳ Pending Owner Price Quote</b>
+                    <p className="tiny muted" style={{ margin: "4px 0 0" }}>
+                      Our garage owner will send you an estimated price quote with a note shortly. You can then accept and book your service.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

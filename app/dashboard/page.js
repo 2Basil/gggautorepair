@@ -49,7 +49,8 @@ export default async function Dashboard({ searchParams }) {
 
       {/* Flashing Notification for Service Requests with Estimates */}
       {estimateJobs.map((j) => {
-        const hasEstimate = j.estMin > 0 || j.estMax > 0;
+        const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+        const hasEstimate = ownerQuoted && (j.estMin > 0 || j.estMax > 0);
         return (
           <div
             key={j.id}
@@ -83,11 +84,11 @@ export default async function Dashboard({ searchParams }) {
                   <div className="small" style={{ marginTop: 2, color: hasEstimate ? "#3a3f49" : "#78350f" }}>
                     {hasEstimate ? (
                       <>
-                        The garage owner quoted an estimate of <b>{money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}</b> for: <i>“{j.query}”</i>.
+                        The garage owner quoted an estimate of <b>{money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}</b> for: <i>“{j.query}”</i>. Review the estimate to book or decline.
                       </>
                     ) : (
                       <>
-                        Your request for <i>“{j.query}”</i> was submitted. The garage owner is reviewing it and will quote an estimated price shortly.
+                        Your request for <i>“{j.query}”</i> was submitted. The garage owner is reviewing it and will quote an estimated price with a note shortly.
                       </>
                     )}
                   </div>
@@ -96,9 +97,9 @@ export default async function Dashboard({ searchParams }) {
               <Link
                 href={`/track/${j.id}`}
                 className={`btn btn-sm ${hasEstimate ? "btn-primary" : "btn-dark"}`}
-                style={{ boxShadow: hasEstimate ? "0 4px 14px rgba(200,69,43,0.35)" : "none" }}
+                style={{ boxShadow: hasEstimate ? "0 4px 14px rgba(200,69,43,0.35)" : "none", fontWeight: 700 }}
               >
-                {hasEstimate ? "View Estimate & Accept →" : "Track Request →"}
+                {hasEstimate ? "View Estimate & Book Service →" : "Track Request →"}
               </Link>
             </div>
           </div>
