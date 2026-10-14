@@ -5,54 +5,99 @@ import { fmtDateTime, money, prettyReg } from "@/lib/format";
 import PrintButton from "./PrintButton";
 import { createStripeCheckout, verifyAndSettleBill } from "@/app/actions";
 import { useState, useTransition } from "react";
+import { usePathname } from "next/navigation";
 
-const US_GATEWAYS = [
+const METHOD_ICONS = {
+  CARD: "💳",
+  ZELLE: "⚡",
+  PAYPAL: "🅿️",
+  VENMO: "🅿️",
+  CASHAPP: "🟢",
+  APPLE_PAY: "🍎",
+  BANK: "🏦",
+  CASH: "💵",
+  CUSTOM: "🪙",
+};
+
+const DEFAULT_FALLBACK_GATEWAYS = [
   {
     id: "card",
-    name: "Credit / Debit Card",
-    badge: "Stripe",
-    fee: "Free Integration in US",
-    icons: ["💳", "Visa", "Mastercard", "AmEx", "Discover"],
-    desc: "All major US cards with instant SSL 256-bit PCI DSS verification.",
-    popular: true,
+    type: "CARD",
+    title: "Credit / Debit Card",
+    badge: "Stripe & Square",
+    details: "All major US credit & debit cards accepted (Visa, Mastercard, AmEx, Discover)",
+    accountName: "ZZZ Auto Care Merchant",
+    instructions: "Instant 256-bit encrypted checkout via Stripe network.",
+    active: true,
+  },
+  {
+    id: "zelle",
+    type: "ZELLE",
+    title: "Zelle Transfer",
+    badge: "Instant / $0 Fee",
+    details: "payments@zzzautorepair.com",
+    accountName: "ZZZ Auto Care LLC",
+    instructions: "Send from your mobile banking app. Include your invoice serial number in the memo.",
+    active: true,
   },
   {
     id: "paypal",
-    name: "PayPal & Venmo",
-    badge: "PayPal",
-    fee: "Free Integration in US",
-    icons: ["🅿️", "PayPal", "Venmo", "Pay in 4"],
-    desc: "Pay using PayPal wallet, Venmo QR/app, or interest-free installments.",
-    popular: false,
+    type: "PAYPAL",
+    title: "PayPal & Venmo",
+    badge: "PayPal / Venmo",
+    details: "pay@zzzautorepair.com (Venmo: @ZZZ-AutoCare)",
+    accountName: "ZZZ Auto Care",
+    instructions: "Pay via PayPal balance, connected US checking account, or Venmo app.",
+    active: true,
   },
   {
     id: "cashapp",
-    name: "Cash App Pay",
-    badge: "Square",
-    fee: "Free Integration in US",
-    icons: ["🟢", "Cash App", "Square Pay"],
-    desc: "Fast mobile checkout via $cashtag or Cash App scan & pay.",
-    popular: false,
+    type: "CASHAPP",
+    title: "Cash App Pay",
+    badge: "Square Cash",
+    details: "$ZZZAutoCare",
+    accountName: "ZZZ Auto Repair",
+    instructions: "Send payment to our $cashtag or scan QR code at counter.",
+    active: true,
   },
   {
-    id: "wallets",
-    name: "Apple Pay & Google Pay",
+    id: "applepay",
+    type: "APPLE_PAY",
+    title: "Apple Pay & Google Pay",
     badge: "Digital Wallets",
-    fee: "Free Integration in US",
-    icons: ["🍎", "Apple Pay", "Google Pay"],
-    desc: "One-touch biometric payment via Touch ID, Face ID, or Google Wallet.",
-    popular: false,
+    details: "Biometric 1-touch checkout on iPhone, Mac, Android, and Chrome.",
+    accountName: "ZZZ Auto Digital",
+    instructions: "Authenticate instantly with Touch ID, Face ID, or Google Wallet.",
+    active: true,
+  },
+  {
+    id: "cash",
+    type: "CASH",
+    title: "Pay at Garage Counter / POS",
+    badge: "In-Person",
+    details: "Pay at 1240 Industrial Way, Bay 3",
+    accountName: "Service Bay Terminal",
+    instructions: "Pay in person with cash, debit card swipe, or check during vehicle pick-up.",
+    active: true,
   },
 ];
 
-function USPaymentPortal({ billId, total, onPaymentSuccess }) {
-  const [selectedGateway, setSelectedGateway] = useState("card");
+function USPaymentPortal({ billId, total, onPaymentSuccess, paymentMethods = [] }) {
+  const activeMethods =
+    paymentMethods && paymentMethods.length > 0
+      ? paymentMethods.filter((m) => m.active !== false)
+      : DEFAULT_FALLBACK_GATEWAYS;
+
+  const [selectedId, setSelectedId] = useState(activeMethods[0]?.id || "card");
   const [cardNumber, setCardNumber] = useState("4242 •••• •••• 4242");
   const [cardHolder, setCardHolder] = useState("US Customer");
-  const [cashtag, setCashtag] = useState("$autocare_customer");
+  const [userRef, setUserRef] = useState("");
   const [busy, start] = useTransition();
   const [statusMsg, setStatusMsg] = useState("");
   const [err, setErr] = useState("");
+
+  const currentMethod =
+    activeMethods.find((m) => m.id === selectedId) || activeMethods[0] || DEFAULT_FALLBACK_GATEWAYS[0];
 
   function handleProcessPayment(useLiveStripe = false) {
     setErr("");
@@ -60,7 +105,7 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
 
     start(async () => {
       // 1. If user chose live Stripe checkout flow
-      if (useLiveStripe && selectedGateway === "card") {
+      if (useLiveStripe && currentMethod.type === "CARD") {
         setStatusMsg("Connecting to Stripe US Checkout…");
         const res = await createStripeCheckout(billId);
         if (res.url) {
@@ -72,27 +117,25 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
           setStatusMsg("");
           return;
         }
-        // If Stripe keys are not set, fall through to instant test gateway
       }
 
-      // 2. Universal US Gateway Verification Handshake
+      // 2. Gateway Verification Handshake
       try {
-        setStatusMsg("1/3 Connecting to US Payment Gateway Network…");
-        await new Promise((r) => setTimeout(r, 600));
+        setStatusMsg(`1/3 Connecting to ${currentMethod.title} network…`);
+        await new Promise((r) => setTimeout(r, 550));
 
-        setStatusMsg("2/3 Verifying fund authorization & banking security…");
-        await new Promise((r) => setTimeout(r, 700));
+        setStatusMsg(`2/3 Verifying receiving account (${currentMethod.details})…`);
+        await new Promise((r) => setTimeout(r, 650));
 
         setStatusMsg("3/3 Generating verified merchant settlement receipt…");
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 550));
 
-        const gatewayObj = US_GATEWAYS.find((g) => g.id === selectedGateway) || US_GATEWAYS[0];
         const res = await verifyAndSettleBill(billId, {
-          gateway: gatewayObj.badge,
-          method: gatewayObj.name,
-          brand: selectedGateway === "card" ? "Visa" : gatewayObj.name,
-          last4: selectedGateway === "card" ? "4242" : "US99",
-          txnRef: `US-${gatewayObj.badge.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+          gateway: currentMethod.badge || currentMethod.title,
+          method: currentMethod.title,
+          brand: currentMethod.title,
+          last4: userRef ? userRef.slice(-4) : currentMethod.type === "CARD" ? "4242" : "PAID",
+          txnRef: `${(currentMethod.badge || currentMethod.type).toUpperCase().replace(/[^A-Z0-9]/g, "")}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
         });
 
         if (res.error) {
@@ -113,48 +156,68 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
   }
 
   return (
-    <div style={{
-      background: "linear-gradient(135deg, #f8fafc, #eff6ff)",
-      border: "2px solid #93c5fd",
-      borderRadius: 18,
-      padding: "24px 26px",
-      boxShadow: "0 8px 28px rgba(59, 130, 246, 0.12)",
-    }}>
+    <div
+      id="payment"
+      style={{
+        background: "linear-gradient(135deg, #f8fafc, #eff6ff)",
+        border: "2px solid #93c5fd",
+        borderRadius: 18,
+        padding: "24px 26px",
+        boxShadow: "0 8px 28px rgba(59, 130, 246, 0.12)",
+      }}
+    >
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: "1.3rem" }}>💳</span>
             <h3 style={{ margin: 0, fontSize: "1.2rem", color: "#1e3a8a", fontWeight: 800 }}>
-              US Online Payment Gateway
+              Payment Options &amp; Settlement
             </h3>
-            <span style={{
-              background: "#dbeafe", color: "#1d4ed8", padding: "2px 8px",
-              borderRadius: 6, fontSize: "0.72rem", fontWeight: 700,
-            }}>
-              Free US Integration
+            <span
+              style={{
+                background: "#dbeafe",
+                color: "#1d4ed8",
+                padding: "2px 8px",
+                borderRadius: 6,
+                fontSize: "0.72rem",
+                fontWeight: 700,
+              }}
+            >
+              Garage Verified
             </span>
           </div>
           <p style={{ margin: "4px 0 0", fontSize: "0.86rem", color: "#475569" }}>
-            Select your preferred US payment gateway. After payment, the bill automatically updates to <b>PAID IN FULL</b>.
+            Click and choose your preferred payment option below to settle your invoice in full.
           </p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: "0.76rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.06em" }}>Total Due</div>
-          <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#1e3a8a", fontFamily: "var(--mono)" }}>
+          <div style={{ fontSize: "0.76rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.06em" }}>
+            Total Due
+          </div>
+          <div style={{ fontSize: "1.55rem", fontWeight: 900, color: "#1e3a8a", fontFamily: "var(--mono)" }}>
             {money(total)}
           </div>
         </div>
       </div>
 
-      {/* Gateway selector grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 20 }}>
-        {US_GATEWAYS.map((gw) => {
-          const isSelected = selectedGateway === gw.id;
+      {/* Payment Options Grid — Clickable Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gap: 10,
+          marginBottom: 18,
+        }}
+      >
+        {activeMethods.map((m) => {
+          const isSelected = selectedId === m.id;
+          const icon = METHOD_ICONS[m.type] || "💳";
+
           return (
             <div
-              key={gw.id}
-              onClick={() => !busy && setSelectedGateway(gw.id)}
+              key={m.id}
+              onClick={() => !busy && setSelectedId(m.id)}
               style={{
                 cursor: busy ? "not-allowed" : "pointer",
                 padding: "14px 16px",
@@ -167,38 +230,123 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
               }}
             >
               {isSelected && (
-                <span style={{
-                  position: "absolute", top: 10, right: 10,
-                  width: 18, height: 18, borderRadius: "50%",
-                  background: "#2563eb", color: "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "0.7rem", fontWeight: 800,
-                }}>✓</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 10,
+                    right: 10,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "#2563eb",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.7rem",
+                    fontWeight: 800,
+                  }}
+                >
+                  ✓
+                </span>
               )}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: "1.2rem" }}>{gw.icons[0]}</span>
-                <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>{gw.name}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                <span style={{ fontSize: "1.25rem" }}>{icon}</span>
+                <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>
+                  {m.title}
+                </span>
               </div>
               <div style={{ fontSize: "0.74rem", color: "#64748b", marginBottom: 6 }}>
-                {gw.desc}
+                {m.details}
               </div>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
-                {gw.icons.slice(1).map((sub) => (
-                  <span key={sub} style={{
-                    fontSize: "0.68rem", fontWeight: 700, padding: "2px 6px",
-                    borderRadius: 4, background: "#e2e8f0", color: "#334155",
-                  }}>{sub}</span>
-                ))}
-              </div>
+              {m.badge && (
+                <span
+                  style={{
+                    fontSize: "0.68rem",
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: isSelected ? "#dbeafe" : "#e2e8f0",
+                    color: isSelected ? "#1d4ed8" : "#334155",
+                    display: "inline-block",
+                  }}
+                >
+                  {m.badge}
+                </span>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Dynamic payment input details according to chosen method */}
-      <div style={{ background: "#ffffff", borderRadius: 12, padding: "16px 20px", border: "1px solid #e2e8f0", marginBottom: 18 }}>
-        {selectedGateway === "card" && (
-          <div style={{ display: "grid", gap: 10 }}>
+      {/* Dynamic Payment Details & Inputs based on Selected Option */}
+      <div
+        style={{
+          background: "#ffffff",
+          borderRadius: 14,
+          padding: "18px 22px",
+          border: "1px solid #cbd5e1",
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "1.3rem" }}>{METHOD_ICONS[currentMethod.type] || "💳"}</span>
+            <span style={{ fontWeight: 800, fontSize: "1rem", color: "#0f172a" }}>
+              {currentMethod.title}
+            </span>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                background: "#dcfce7",
+                color: "#15803d",
+                padding: "2px 7px",
+                borderRadius: 6,
+              }}
+            >
+              Direct Garage Receiving
+            </span>
+          </div>
+
+          <div
+            style={{
+              fontSize: "0.88rem",
+              fontWeight: 700,
+              color: "#1d4ed8",
+              marginTop: 4,
+              fontFamily: "var(--mono)",
+            }}
+          >
+            Receiving Account: {currentMethod.details}
+          </div>
+
+          {currentMethod.accountName && (
+            <div style={{ fontSize: "0.78rem", color: "#475569", marginTop: 2 }}>
+              Account Name: <b>{currentMethod.accountName}</b>
+            </div>
+          )}
+
+          {currentMethod.instructions && (
+            <div
+              style={{
+                fontSize: "0.8rem",
+                color: "#64748b",
+                marginTop: 4,
+                background: "#f8fafc",
+                padding: "6px 10px",
+                borderRadius: 6,
+                borderLeft: "3px solid #3b82f6",
+              }}
+            >
+              ℹ️ {currentMethod.instructions}
+            </div>
+          )}
+        </div>
+
+        {/* Card Form */}
+        {currentMethod.type === "CARD" && (
+          <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
                 US Card Details (Stripe Checkout)
@@ -215,8 +363,12 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
                 onChange={(e) => setCardNumber(e.target.value)}
                 disabled={busy}
                 style={{
-                  padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem", fontFamily: "var(--mono)", background: "#f8fafc",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.88rem",
+                  fontFamily: "var(--mono)",
+                  background: "#f8fafc",
                 }}
               />
               <input
@@ -225,8 +377,12 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
                 defaultValue="12/28"
                 disabled={busy}
                 style={{
-                  padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem", textAlign: "center", background: "#f8fafc",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.88rem",
+                  textAlign: "center",
+                  background: "#f8fafc",
                 }}
               />
               <input
@@ -235,8 +391,12 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
                 defaultValue="888"
                 disabled={busy}
                 style={{
-                  padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem", textAlign: "center", background: "#f8fafc",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.88rem",
+                  textAlign: "center",
+                  background: "#f8fafc",
                 }}
               />
             </div>
@@ -248,8 +408,12 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
                 onChange={(e) => setCardHolder(e.target.value)}
                 disabled={busy}
                 style={{
-                  flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem", background: "#f8fafc",
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.88rem",
+                  background: "#f8fafc",
                 }}
               />
               <span style={{ fontSize: "0.75rem", color: "#64748b" }}>ZIP 90210</span>
@@ -257,74 +421,81 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
           </div>
         )}
 
-        {selectedGateway === "paypal" && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "#1e3a8a" }}>
-              🅿️ PayPal &amp; Venmo Instant Pay (Free US Integration)
-            </div>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569" }}>
-              Authorize using your PayPal account balance, connected US checking bank, Venmo handle, or Pay in 4.
-            </p>
-            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <span style={{ padding: "6px 12px", background: "#fef08a", borderRadius: 6, fontWeight: 700, fontSize: "0.82rem", color: "#713f12" }}>
-                PayPal Smart Checkout
-              </span>
-              <span style={{ padding: "6px 12px", background: "#e0e7ff", borderRadius: 6, fontWeight: 700, fontSize: "0.82rem", color: "#3730a3" }}>
-                Venmo US Mobile
-              </span>
-            </div>
-          </div>
-        )}
-
-        {selectedGateway === "cashapp" && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "#166534" }}>
-              🟢 Cash App Pay (Square US Network)
-            </div>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569" }}>
-              Instant mobile payment using your $cashtag or Cash App camera scanner.
-            </p>
+        {/* Zelle, PayPal, Venmo, CashApp, Bank, Cash, or Custom Inputs */}
+        {currentMethod.type !== "CARD" && (
+          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+            <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+              {currentMethod.type === "ZELLE"
+                ? "Your Sender Name or Bank Zelle Ref"
+                : currentMethod.type === "PAYPAL" || currentMethod.type === "VENMO"
+                ? "Your PayPal / Venmo Handle or Transaction ID"
+                : currentMethod.type === "CASHAPP"
+                ? "Your $cashtag or Cash App Receipt Ref"
+                : currentMethod.type === "BANK"
+                ? "Wire / ACH Transfer Confirmation #"
+                : currentMethod.type === "CASH"
+                ? "Customer Notes / Cash Tendered"
+                : "Your Reference or Confirmation #"}
+            </label>
             <input
               type="text"
-              placeholder="$cashtag"
-              value={cashtag}
-              onChange={(e) => setCashtag(e.target.value)}
+              placeholder={
+                currentMethod.type === "ZELLE"
+                  ? "e.g. John Doe (Chase Zelle)"
+                  : currentMethod.type === "CASHAPP"
+                  ? "e.g. $john_customer"
+                  : currentMethod.type === "CASH"
+                  ? "e.g. Paying cash at counter"
+                  : "e.g. TXN-123456"
+              }
+              value={userRef}
+              onChange={(e) => setUserRef(e.target.value)}
               disabled={busy}
               style={{
-                width: 240, padding: "10px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
-                fontSize: "0.88rem", fontWeight: 700, color: "#15803d",
+                maxWidth: 420,
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                fontSize: "0.88rem",
+                background: "#f8fafc",
               }}
             />
-          </div>
-        )}
-
-        {selectedGateway === "wallets" && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "#0f172a" }}>
-              🍎 Apple Pay &amp; Google Pay (Web Payments SDK)
-            </div>
-            <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569" }}>
-              Tap once to authenticate with your default biometric card on iPhone, Mac, Android, or Chrome.
-            </p>
           </div>
         )}
       </div>
 
       {/* Error & Status notifications */}
       {err && (
-        <div style={{
-          background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10,
-          padding: "10px 14px", color: "#b91c1c", fontSize: "0.85rem", marginBottom: 14,
-        }}>
+        <div
+          style={{
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: 10,
+            padding: "10px 14px",
+            color: "#b91c1c",
+            fontSize: "0.85rem",
+            marginBottom: 14,
+          }}
+        >
           ❌ {err}
         </div>
       )}
       {statusMsg && (
-        <div style={{
-          background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 10,
-          padding: "10px 14px", color: "#065f46", fontSize: "0.85rem", marginBottom: 14,
-          display: "flex", alignItems: "center", gap: 8, fontWeight: 600,
-        }}>
+        <div
+          style={{
+            background: "#ecfdf5",
+            border: "1px solid #a7f3d0",
+            borderRadius: 10,
+            padding: "10px 14px",
+            color: "#065f46",
+            fontSize: "0.85rem",
+            marginBottom: 14,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontWeight: 600,
+          }}
+        >
           <span className="pulse" style={{ width: 10, height: 10, background: "#10b981" }} />
           {statusMsg}
         </div>
@@ -355,15 +526,15 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
           }}
         >
           {busy ? (
-            <>⏳ Verifying with US Gateway…</>
+            <>⏳ Verifying with {currentMethod.title}…</>
           ) : (
             <>
-              🔒 Pay {money(total)} &amp; Verify Bill
+              🔒 Pay {money(total)} via {currentMethod.title}
             </>
           )}
         </button>
 
-        {selectedGateway === "card" && (
+        {currentMethod.type === "CARD" && (
           <button
             onClick={() => handleProcessPayment(true)}
             disabled={busy}
@@ -403,7 +574,17 @@ function USPaymentPortal({ billId, total, onPaymentSuccess }) {
   );
 }
 
-export default function BillView({ bill: initialBill, showPrices = true, paymentStatus }) {
+export default function BillView({
+  bill: initialBill,
+  showPrices = true,
+  paymentStatus,
+  allowOnlinePayment,
+  paymentMethods = [],
+}) {
+  const pathname = usePathname();
+  const isOwnerPortal = pathname ? pathname.startsWith("/owner") : false;
+  const canShowOnlinePayment = allowOnlinePayment !== undefined ? allowOnlinePayment : !isOwnerPortal;
+
   const [bill, setBill] = useState(initialBill);
   const [settledInfo, setSettledInfo] = useState(null);
 
@@ -661,11 +842,12 @@ export default function BillView({ bill: initialBill, showPrices = true, payment
       <div className="no-print" style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: "14px" }}>
         <PrintButton />
 
-        {!isPaid && showPrices && (
+        {!isPaid && showPrices && canShowOnlinePayment && (
           <USPaymentPortal
             billId={bill.id}
             total={bill.total}
             onPaymentSuccess={handleSuccess}
+            paymentMethods={paymentMethods}
           />
         )}
       </div>

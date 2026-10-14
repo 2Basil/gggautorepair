@@ -43,7 +43,7 @@ export default async function OwnerBill({ params }) {
         </div>
       )}
 
-      <BillView bill={bill} />
+      <BillView bill={bill} allowOnlinePayment={false} />
     </>
   );
 }

@@ -125,9 +125,13 @@ export default async function OwnerJob({ params }) {
             </div>
           ) : !isClosed && job.status === "BOOKED" ? (
             <>
-              <h4 style={{ margin: "0 0 4px" }}>Send / Update Estimate Price (Starting Phase)</h4>
+              <h4 style={{ margin: "0 0 4px" }}>
+                {job.estMin > 0 ? "Update Estimate Price" : "⚠️ Provide Manual Estimate to Customer"}
+              </h4>
               <p className="muted small" style={{ margin: "0 0 10px" }}>
-                The customer receives a flashing notification with this starting quote to bring their vehicle in.
+                {job.estMin > 0
+                  ? "The customer receives a flashing notification with this starting quote to bring their vehicle in."
+                  : "Customer submitted an estimate request. Enter your manual estimated price below to quote the customer."}
               </p>
               <form action={sendJobEstimate} style={{ marginBottom: 10 }}>
                 <input type="hidden" name="jobId" value={job.id} />
@@ -137,7 +141,7 @@ export default async function OwnerJob({ params }) {
                     <input
                       type="number"
                       name="estMin"
-                      defaultValue={job.estMin}
+                      defaultValue={job.estMin > 0 ? job.estMin : ""}
                       placeholder="Min $"
                       required
                     />
@@ -147,7 +151,7 @@ export default async function OwnerJob({ params }) {
                     <input
                       type="number"
                       name="estMax"
-                      defaultValue={job.estMax}
+                      defaultValue={job.estMax > 0 ? job.estMax : ""}
                       placeholder="Max $"
                     />
                   </div>
@@ -156,12 +160,12 @@ export default async function OwnerJob({ params }) {
                   <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Note to customer</label>
                   <input
                     name="note"
-                    placeholder="e.g. Estimate sent. Please bring your vehicle to the garage."
-                    defaultValue="Estimate sent. Please bring your vehicle to the garage."
+                    placeholder="e.g. Estimate provided. Please bring your vehicle to the garage."
+                    defaultValue="Estimate provided. Please bring your vehicle to the garage."
                   />
                 </div>
                 <button className="btn btn-primary btn-block">
-                  Send Estimate to Customer 🔔
+                  {job.estMin > 0 ? "Update Estimate 🔔" : "Send Manual Estimate to Customer 🔔"}
                 </button>
               </form>
               <hr className="divider" />

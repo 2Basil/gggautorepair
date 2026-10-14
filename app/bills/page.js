@@ -97,7 +97,16 @@ export default async function BillsPage({ searchParams }) {
                     {b.paid ? "Paid" : "Due"}
                   </span>
                 </td>
-                <td className="right">
+                <td className="right" style={{ whiteSpace: "nowrap" }}>
+                  {!b.paid && (
+                    <Link
+                      href={`/bills/${b.id}#payment`}
+                      className="btn btn-primary btn-sm"
+                      style={{ marginRight: 6 }}
+                    >
+                      Pay Now 💳
+                    </Link>
+                  )}
                   <Link href={`/bills/${b.id}`} className="btn btn-ghost btn-sm">
                     Open Invoice
                   </Link>

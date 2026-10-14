@@ -48,26 +48,62 @@ export default async function Dashboard({ searchParams }) {
       {sp.subscribed && <div className="alert ok">Plan activated for your vehicle. Our team will contact you to schedule the first visit.</div>}
 
       {/* Flashing Notification for Service Requests with Estimates */}
-      {estimateJobs.map((j) => (
-        <div key={j.id} className="notif-flash" style={{ marginBottom: 22 }}>
-          <div className="row between" style={{ alignItems: "center", gap: 14 }}>
-            <div className="row" style={{ gap: 12, alignItems: "center" }}>
-              <span className="pulse" style={{ width: 14, height: 14, background: "var(--accent)" }} />
-              <div>
-                <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--accent)" }}>
-                  🔔 Service Estimate Ready — {j.vehicle.make} {j.vehicle.model} ({prettyReg(j.vehicle.regNo)})
-                </div>
-                <div className="small" style={{ marginTop: 2, color: "#3a3f49" }}>
-                  The garage sent an estimate of <b>{money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}</b> for: <i>“{j.query}”</i>. Please bring your vehicle to the garage to begin repair work!
+      {estimateJobs.map((j) => {
+        const hasEstimate = j.estMin > 0 || j.estMax > 0;
+        return (
+          <div
+            key={j.id}
+            className="notif-flash"
+            style={{
+              marginBottom: 22,
+              background: hasEstimate
+                ? "linear-gradient(135deg, rgba(200,69,43,0.08), rgba(200,69,43,0.02))"
+                : "linear-gradient(135deg, #fef3c7, #fef9c3)",
+              borderColor: hasEstimate ? "rgba(200,69,43,0.3)" : "#f59e0b",
+            }}
+          >
+            <div className="row between" style={{ alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div className="row" style={{ gap: 12, alignItems: "center" }}>
+                <span
+                  className="pulse"
+                  style={{ width: 14, height: 14, background: hasEstimate ? "var(--accent)" : "#d97706" }}
+                />
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      fontSize: "1.05rem",
+                      color: hasEstimate ? "var(--accent)" : "#b45309",
+                    }}
+                  >
+                    {hasEstimate
+                      ? `🔔 Service Estimate Ready — ${j.vehicle.make} ${j.vehicle.model} (${prettyReg(j.vehicle.regNo)})`
+                      : `⏳ Estimate Pending — ${j.vehicle.make} ${j.vehicle.model} (${prettyReg(j.vehicle.regNo)})`}
+                  </div>
+                  <div className="small" style={{ marginTop: 2, color: hasEstimate ? "#3a3f49" : "#78350f" }}>
+                    {hasEstimate ? (
+                      <>
+                        The garage owner quoted an estimate of <b>{money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}</b> for: <i>“{j.query}”</i>.
+                      </>
+                    ) : (
+                      <>
+                        Your request for <i>“{j.query}”</i> was submitted. The garage owner is reviewing it and will quote an estimated price shortly.
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
+              <Link
+                href={`/track/${j.id}`}
+                className={`btn btn-sm ${hasEstimate ? "btn-primary" : "btn-dark"}`}
+                style={{ boxShadow: hasEstimate ? "0 4px 14px rgba(200,69,43,0.35)" : "none" }}
+              >
+                {hasEstimate ? "View Estimate & Accept →" : "Track Request →"}
+              </Link>
             </div>
-            <Link href={`/track/${j.id}`} className="btn btn-primary btn-sm" style={{ boxShadow: "0 4px 14px rgba(200,69,43,0.35)" }}>
-              Track live &amp; View estimate →
-            </Link>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {active.length > 0 && (
         <section style={{ marginBottom: 28 }}>

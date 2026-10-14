@@ -84,9 +84,13 @@ export default async function OwnerJobs({ searchParams }) {
                       <span className="badge unpaid" style={{ fontWeight: 700 }}>
                         Due {money(latestBill.total)}
                       </span>
-                    ) : (
+                    ) : j.estMin > 0 ? (
                       <span className="mono" style={{ fontWeight: 600, color: "var(--accent)" }}>
                         {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                      </span>
+                    ) : (
+                      <span className="badge" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700 }}>
+                        ⚠️ Quote Needed
                       </span>
                     )}
                   </td>

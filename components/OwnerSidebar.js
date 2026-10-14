@@ -87,6 +87,11 @@ export default function OwnerSidebar({ owner = true, pendingRequests = 0 }) {
             </Link>
           )}
           {owner && (
+            <Link href="/owner/payments" className={isActive("/owner/payments") ? "active" : ""}>
+              Receiving Methods
+            </Link>
+          )}
+          {owner && (
             <Link href="/owner/employees" className={isActive("/owner/employees") ? "active" : ""}>
               Staff
             </Link>
@@ -178,6 +183,16 @@ export default function OwnerSidebar({ owner = true, pendingRequests = 0 }) {
                 >
                   <Icon name="chart" size={17} />
                   <span>Financial Ledger</span>
+                </Link>
+              )}
+
+              {owner && (
+                <Link
+                  href="/owner/payments"
+                  className={`sidebar-link ${isActive("/owner/payments") ? "active" : ""}`}
+                >
+                  <Icon name="receipt" size={17} />
+                  <span>Receiving Methods</span>
                 </Link>
               )}
             </div>

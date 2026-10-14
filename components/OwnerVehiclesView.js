@@ -191,8 +191,16 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                   ) : isRequested ? (
                     <div>
                       <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Starting Estimate:</span>
-                      <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent)" }}>
-                        {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                      <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+                        {j.estMin > 0 ? (
+                          <span style={{ color: "var(--accent)" }}>
+                            {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
+                          </span>
+                        ) : (
+                          <span className="badge" style={{ background: "#fee2e2", color: "#b91c1c", fontWeight: 700, padding: "3px 8px" }}>
+                            ⚠️ Manual Quote Needed
+                          </span>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -219,33 +227,36 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                       {/* One-click Accept & Start Repair */}
                       <form action={acceptJobRequest}>
                         <input type="hidden" name="jobId" value={j.id} />
-                        <button className="btn btn-primary btn-sm" style={{ fontWeight: 700 }}>
-                          Accept Vehicle &amp; Start Repair 🔧
+                        <button className="btn btn-ghost btn-sm" style={{ fontWeight: 600 }}>
+                          Accept Vehicle 🔧
                         </button>
                       </form>
 
-                      {/* Quick Send Estimate Form (only at starting phase) */}
+                      {/* Quick Send Estimate Form (manual owner quote) */}
                       <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
                         <input type="hidden" name="jobId" value={j.id} />
                         <input
                           type="number"
                           name="estMin"
-                          defaultValue={j.estMin}
+                          defaultValue={j.estMin > 0 ? j.estMin : ""}
                           placeholder="Min $"
-                          style={{ width: 85, padding: "6px 8px", fontSize: "0.85rem" }}
+                          style={{ width: 85, padding: "6px 8px", fontSize: "0.85rem", border: j.estMin === 0 ? "1.5px solid var(--accent)" : "1px solid var(--line)" }}
                           title="Minimum estimate"
                           required
                         />
                         <input
                           type="number"
                           name="estMax"
-                          defaultValue={j.estMax}
+                          defaultValue={j.estMax > 0 ? j.estMax : ""}
                           placeholder="Max $"
                           style={{ width: 85, padding: "6px 8px", fontSize: "0.85rem" }}
                           title="Maximum estimate"
                         />
-                        <button className="btn btn-ghost btn-sm" title="Send estimate with instant customer flash notification">
-                          Send Est 🔔
+                        <button
+                          className={`btn btn-sm ${j.estMin === 0 ? "btn-primary" : "btn-dark"}`}
+                          title="Send manual price estimate to customer"
+                        >
+                          {j.estMin === 0 ? "Quote Price 🔔" : "Update Est 🔔"}
                         </button>
                       </form>
                     </>

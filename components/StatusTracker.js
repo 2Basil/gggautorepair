@@ -2,8 +2,7 @@
 
 import { SHOW_PRICES } from "@/lib/settings";
 import { useActionState, useEffect, useState } from "react";
-import Link from "next/link";
-import { getJobStatus, customerCancelJob, rescheduleJob } from "@/app/actions";
+import { getJobStatus, customerCancelJob, rescheduleJob, customerAcceptEstimate } from "@/app/actions";
 import { STEPS, STATUS_LABEL } from "@/lib/config";
 import { fmtDateTime, money } from "@/lib/format";
 import Icon from "./Icon";
@@ -139,25 +138,67 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
 
   // Check if owner sent a custom estimate note
   const estimateLog = [...(data.logs || [])].reverse().find((l) => l.note?.toLowerCase().includes("estimate"));
+  const customerAccepted = (data.logs || []).some((l) => l.note?.toLowerCase().includes("customer accepted"));
+  const hasEstimate = currentEstMin > 0 || currentEstMax > 0;
 
   return (
     <div>
       {/* Flash notification banner when estimate is ready / active (only during starting phase before paid) */}
       {!cancelled && !done && !data.bill?.paid && (
-        <div className="notif-flash" style={{ marginBottom: 20 }}>
-          <div className="row between" style={{ alignItems: "center" }}>
+        <div
+          className="notif-flash"
+          style={{
+            marginBottom: 20,
+            background: hasEstimate
+              ? "linear-gradient(135deg, rgba(200, 69, 43, 0.08), rgba(200, 69, 43, 0.03))"
+              : "linear-gradient(135deg, #fef3c7, #fef9c3)",
+            borderColor: hasEstimate ? "rgba(200, 69, 43, 0.3)" : "#f59e0b",
+          }}
+        >
+          <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div className="row" style={{ gap: 12, alignItems: "center" }}>
-              <span className="pulse" style={{ width: 12, height: 12, background: "var(--accent)" }} />
+              <span
+                className="pulse"
+                style={{ width: 12, height: 12, background: hasEstimate ? "var(--accent)" : "#d97706" }}
+              />
               <div>
-                <div style={{ fontWeight: 800, fontSize: "1.02rem", color: "var(--accent)" }}>
-                  🔔 Garage Estimate: {money(currentEstMin)}{currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: "1.06rem",
+                    color: hasEstimate ? "var(--accent)" : "#b45309",
+                  }}
+                >
+                  {hasEstimate
+                    ? `🔔 Owner's Estimate: ${money(currentEstMin)}${currentEstMin !== currentEstMax ? ` – ${money(currentEstMax)}` : ""}`
+                    : "⏳ Estimate Request Sent — Waiting for Owner's Price Quote"}
                 </div>
-                <div className="small muted" style={{ marginTop: 2 }}>
-                  {estimateLog?.note ? estimateLog.note : "Please bring your vehicle to the garage. You can see the initial estimate and all work charges logged below."}
+                <div className="small muted" style={{ marginTop: 2, color: hasEstimate ? undefined : "#78350f" }}>
+                  {hasEstimate
+                    ? estimateLog?.note
+                      ? estimateLog.note
+                      : "Please bring your vehicle to the garage. You can see the initial estimate and all work charges logged below."
+                    : "The garage owner is reviewing your vehicle issue and will quote your price estimate shortly. Once quoted, you can accept or decline."}
                 </div>
               </div>
             </div>
-            <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
+
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              {hasEstimate && !customerAccepted && (
+                <form action={customerAcceptEstimate}>
+                  <input type="hidden" name="jobId" value={jobId} />
+                  <button className="btn btn-primary btn-sm" style={{ fontWeight: 700 }}>
+                    ✓ Accept Estimate &amp; Confirm
+                  </button>
+                </form>
+              )}
+              {customerAccepted && (
+                <span className="badge paid" style={{ fontSize: "0.82rem", fontWeight: 700 }}>
+                  ✓ Estimate Accepted
+                </span>
+              )}
+              <span className={`badge ${data.status}`}>{STATUS_LABEL[data.status]}</span>
+            </div>
           </div>
         </div>
       )}

@@ -287,8 +287,6 @@ export async function bookJob(vehicleId, query) {
   if (!vehicle || vehicle.userId !== user.id) return { error: "Choose one of your vehicles." };
   const q = s(query);
   if (q.length < 3) return { error: "Tell us a little more about what you need." };
-  const [services, samples] = await Promise.all([db.service.findMany({ where: { active: true } }), loadSamples()]);
-  const est = predict(q, vehicle, services, samples);
 
   const job = await db.job.create({
     data: {
@@ -296,15 +294,17 @@ export async function bookJob(vehicleId, query) {
       userId: user.id,
       vehicleId: vehicle.id,
       query: q.slice(0, 500),
-      estMin: est.min,
-      estMax: est.max,
+      estMin: 0,
+      estMax: 0,
       status: "BOOKED",
-      items: { create: est.items.map((i) => ({ description: i.name, category: i.category, qty: 1, unitPrice: i.mid })) },
-      logs: { create: { status: "BOOKED", note: "Request received" } },
+      items: { create: [] },
+      logs: { create: { status: "BOOKED", note: "Customer requested price estimate from garage owner." } },
     },
   });
   await db.job.update({ where: { id: job.id }, data: { code: `PS-${1000 + job.id}` } });
   revalidatePath("/dashboard");
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
   return { jobId: job.id };
 }
 
@@ -426,6 +426,28 @@ export async function sendJobEstimate(fd) {
   revalidatePath(`/owner/jobs/${jobId}`);
   revalidatePath(`/track/${jobId}`);
   revalidatePath("/dashboard");
+}
+
+export async function customerAcceptEstimate(fd) {
+  const user = await requireUser();
+  const jobId = int(fd.get("jobId"));
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job || (job.userId !== user.id && user.role !== "OWNER")) return { error: "Job not found" };
+
+  await db.jobLog.create({
+    data: {
+      jobId: job.id,
+      status: job.status,
+      note: `Customer accepted the estimated quote of $${job.estMin}${job.estMax !== job.estMin ? ` – $${job.estMax}` : ""}. Ready to bring vehicle to garage.`,
+    },
+  });
+
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
+  revalidatePath(`/owner/jobs/${jobId}`);
+  return { ok: true };
 }
 
 export async function customerCancelJob(fd) {
@@ -851,3 +873,52 @@ export async function deleteSample(fd) {
   await db.priceSample.delete({ where: { id: int(fd.get("id")) } }).catch(() => {});
   revalidatePath("/owner/ai");
 }
+
+/* ------------------------------ receiving methods & payments ------------------------------ */
+
+export async function saveReceivingMethod(fd) {
+  await requireStaff();
+  const id = s(fd.get("id"));
+  const type = s(fd.get("type")) || "CARD";
+  const title = s(fd.get("title"));
+  const badge = s(fd.get("badge"));
+  const details = s(fd.get("details"));
+  const accountName = s(fd.get("accountName"));
+  const instructions = s(fd.get("instructions"));
+  const active = fd.get("active") === "on" || fd.get("active") === "true" || fd.get("active") === "1";
+
+  const { savePaymentMethod } = await import("@/lib/paymentMethods");
+  await savePaymentMethod({
+    id,
+    type,
+    title,
+    badge,
+    details,
+    accountName,
+    instructions,
+    active,
+  });
+
+  revalidatePath("/owner/payments");
+  revalidatePath("/bills");
+}
+
+export async function toggleReceivingMethodActive(fd) {
+  await requireStaff();
+  const id = s(fd.get("id"));
+  const active = fd.get("active") === "true" || fd.get("active") === "1";
+  const { togglePaymentMethodActive } = await import("@/lib/paymentMethods");
+  await togglePaymentMethodActive(id, active);
+  revalidatePath("/owner/payments");
+  revalidatePath("/bills");
+}
+
+export async function deleteReceivingMethod(fd) {
+  await requireStaff();
+  const id = s(fd.get("id"));
+  const { deletePaymentMethod } = await import("@/lib/paymentMethods");
+  await deletePaymentMethod(id);
+  revalidatePath("/owner/payments");
+  revalidatePath("/bills");
+}
+

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { SHOW_PRICES } from "@/lib/settings";
 import BillView from "@/components/BillView";
+import { getPaymentMethods } from "@/lib/paymentMethods";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,8 @@ export default async function BillPage({ params, searchParams }) {
     }
   }
 
+  const paymentMethods = await getPaymentMethods(true);
+
   return (
     <div className="container page">
       <div className="no-print" style={{ marginBottom: 16 }}>
@@ -86,8 +89,9 @@ export default async function BillPage({ params, searchParams }) {
       </div>
       <BillView
         bill={freshBill || bill}
-        showPrices={SHOW_PRICES.customerBills}
+        showPrices={true}
         paymentStatus={sp.payment || null}
+        paymentMethods={paymentMethods}
       />
     </div>
   );
