@@ -552,33 +552,61 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 }
 
 /* ---------- owner portal ---------- */
-.owner-shell { display: grid; grid-template-columns: 245px 1fr; gap: 26px; padding: 28px 0 70px; align-items: start; }
-@media (max-width: 900px) { .owner-shell { grid-template-columns: 1fr; } }
+.owner-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 0 70px;
+  align-items: stretch;
+}
 .owner-sidebar {
-  position: sticky;
-  top: 82px;
   background: linear-gradient(180deg, #181c24 0%, #101319 100%);
   color: #f7f1e3;
-  border-radius: 20px;
-  padding: 16px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 16px 18px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow: 0 12px 35px -10px rgba(18, 21, 26, 0.45);
   display: flex;
   flex-direction: column;
   gap: 14px;
+  width: 100%;
 }
-.sidebar-profile {
-  padding: 6px 10px 12px;
+.owner-nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
+.owner-nav-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.owner-nav-col {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 12px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.owner-nav-col:hover {
+  background: rgba(255, 255, 255, 0.038);
+  border-color: rgba(255, 255, 255, 0.1);
+}
 .sidebar-group-title {
-  font-size: 0.68rem;
+  font-size: 0.69rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: #928b7b;
-  padding: 4px 10px 4px;
+  padding: 2px 8px 6px;
   margin: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 .sidebar-links {
   display: flex;
@@ -588,11 +616,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 9px 12px;
-  border-radius: 12px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
   font-weight: 500;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   color: #d8d2c2;
   transition: all 0.16s ease;
   position: relative;
@@ -600,7 +628,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .sidebar-link:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
-  transform: translateX(3px);
+  transform: translateX(2px);
 }
 .sidebar-link.active {
   background: linear-gradient(90deg, rgba(200, 69, 43, 0.22) 0%, rgba(200, 69, 43, 0.08) 100%);
@@ -628,13 +656,45 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
   color: #ffffff;
   font-weight: 700;
 }
-@media (max-width: 900px) {
-  .owner-sidebar { position: static; display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; padding: 10px; }
-  .sidebar-profile { display: none; }
-  .sidebar-group-title { display: none; }
-  .sidebar-links { flex-direction: row; flex-wrap: wrap; gap: 4px; }
-  .sidebar-link { padding: 8px 10px; font-size: 0.82rem; }
-  .owner-sidebar > div:last-child { display: none; }
+.owner-nav-collapsed-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+.owner-nav-collapsed-bar a {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #d8d2c2;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease;
+}
+.owner-nav-collapsed-bar a:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+.owner-nav-collapsed-bar a.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+.owner-nav-collapsed-bar a.special {
+  background: rgba(200, 168, 107, 0.18);
+  color: #f7e3ba;
+  border: 1px dashed rgba(200, 168, 107, 0.4);
+}
+@media (max-width: 1024px) {
+  .owner-nav-columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .owner-nav-columns {
+    grid-template-columns: 1fr;
+  }
 }
 .kpi { padding: 18px 20px; }
 .kpi .label { font-size: 0.78rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }

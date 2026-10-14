@@ -12,7 +12,7 @@ export default async function OwnerLayout({ children }) {
   return (
     <div className="container owner-shell">
       <OwnerSidebar owner={owner} pendingRequests={pendingRequests} />
-      <div style={{ minWidth: 0 }}>{children}</div>
+      <div style={{ minWidth: 0, width: "100%" }}>{children}</div>
     </div>
   );
 }

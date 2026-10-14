@@ -1,7 +1,13 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { GARAGE } from "@/lib/config";
 
 export default function Footer() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/owner")) return null;
+
   return (
     <footer className="site-footer">
       <div className="container footer-row">
