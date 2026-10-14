@@ -922,3 +922,38 @@ export async function deleteReceivingMethod(fd) {
   revalidatePath("/bills");
 }
 
+export async function getOwnerPendingEstimates() {
+  const user = await getUser();
+  if (!user || (user.role !== "OWNER" && user.role !== "EMPLOYEE")) return [];
+  const jobs = await db.job.findMany({
+    where: { status: "BOOKED" },
+    orderBy: { createdAt: "desc" },
+    include: {
+      vehicle: true,
+      user: true,
+      logs: { orderBy: { createdAt: "desc" }, take: 2 },
+    },
+  });
+  return jobs.map((j) => ({
+    id: j.id,
+    code: j.code,
+    query: j.query,
+    estMin: j.estMin,
+    estMax: j.estMax,
+    status: j.status,
+    createdAt: j.createdAt.toISOString(),
+    vehicle: {
+      make: j.vehicle.make,
+      model: j.vehicle.model,
+      regNo: j.vehicle.regNo,
+      year: j.vehicle.year,
+    },
+    user: {
+      name: j.user.name,
+      phone: j.user.phone,
+      email: j.user.email,
+    },
+  }));
+}
+
+
