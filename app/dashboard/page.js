@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function Dashboard({ searchParams }) {
   const user = await requireUser("/dashboard");
   const sp = await searchParams;
-  const [vehicles, jobs, subs] = await Promise.all([
+  const [vehicles, jobs, subs, unpaidBills] = await Promise.all([
     db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
     db.job.findMany({
       where: { userId: user.id },
@@ -20,6 +20,11 @@ export default async function Dashboard({ searchParams }) {
       take: 20,
     }),
     db.subscription.findMany({ where: { userId: user.id, status: "ACTIVE", endsAt: { gt: new Date() } }, include: { plan: true } }),
+    db.bill.findMany({
+      where: { userId: user.id, paid: false },
+      orderBy: { createdAt: "desc" },
+      include: { vehicle: true },
+    }),
   ]);
   const active = jobs.filter((j) => !["DELIVERED", "CANCELLED"].includes(j.status));
   const past = jobs.filter((j) => ["DELIVERED", "CANCELLED"].includes(j.status));
@@ -46,6 +51,116 @@ export default async function Dashboard({ searchParams }) {
       </div>
 
       {sp.subscribed && <div className="alert ok">Plan activated for your vehicle. Our team will contact you to schedule the first visit.</div>}
+
+      {/* ── Outstanding Bills Pay Now Section ── */}
+      {unpaidBills.length > 0 && (
+        <div
+          style={{
+            marginBottom: 28,
+            background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
+            border: "2px solid #f59e0b",
+            borderRadius: 18,
+            padding: "20px 24px",
+            boxShadow: "0 6px 24px rgba(245,158,11,0.14)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <span style={{ fontSize: "1.5rem" }}>💳</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 900, fontSize: "1.1rem", color: "#92400e" }}>
+                {unpaidBills.length === 1
+                  ? "You have 1 bill awaiting payment"
+                  : `You have ${unpaidBills.length} bills awaiting payment`}
+              </div>
+              <div style={{ fontSize: "0.82rem", color: "#b45309", marginTop: 2 }}>
+                Outstanding total:{" "}
+                <b style={{ fontFamily: "var(--mono)" }}>
+                  {money(unpaidBills.reduce((a, b) => a + b.total, 0))}
+                </b>
+                {" "}— click Pay Now to settle any invoice instantly online.
+              </div>
+            </div>
+            <Link href="/bills" className="btn btn-ghost btn-sm" style={{ borderColor: "#f59e0b", color: "#92400e" }}>
+              View all bills
+            </Link>
+          </div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {unpaidBills.map((b) => (
+              <div
+                key={b.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 12,
+                  background: "#ffffff",
+                  borderRadius: 14,
+                  padding: "14px 18px",
+                  border: "1.5px solid #fde68a",
+                  boxShadow: "0 2px 8px rgba(245,158,11,0.08)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 200 }}>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      background: "linear-gradient(135deg,#fef3c7,#fde68a)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "1.1rem",
+                      flexShrink: 0,
+                    }}
+                  >
+                    🧾
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#1f2937" }}>
+                      Invoice #{b.number}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#6b7280" }}>
+                      {b.vehicle.make} {b.vehicle.model} · {fmtDate(b.createdAt)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "0.7rem", color: "#9ca3af", textTransform: "uppercase", fontWeight: 700 }}>Amount Due</div>
+                    <div style={{ fontWeight: 900, fontSize: "1.2rem", color: "#92400e", fontFamily: "var(--mono)" }}>
+                      {money(b.total)}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/bills/${b.id}#payment`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "11px 20px",
+                      background: "linear-gradient(135deg, #d97706, #b45309)",
+                      color: "#fff",
+                      borderRadius: 12,
+                      fontWeight: 900,
+                      fontSize: "0.92rem",
+                      textDecoration: "none",
+                      boxShadow: "0 4px 16px rgba(180,83,9,0.35)",
+                      whiteSpace: "nowrap",
+                      transition: "opacity 0.15s",
+                    }}
+                  >
+                    💳 Pay Now
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Flashing Notification for Service Requests with Estimates */}
       {estimateJobs.map((j) => {

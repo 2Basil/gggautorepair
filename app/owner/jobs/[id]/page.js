@@ -6,7 +6,7 @@ import { fmtDateTime, fmtDate, money, prettyReg } from "@/lib/format";
 import ContactButtons from "@/components/ContactButtons";
 import OwnerBillGenerator from "@/components/OwnerBillGenerator";
 import OwnerTimelineManager from "@/components/OwnerTimelineManager";
-import { updateJobStatus, addJobItem, removeJobItem, sendJobEstimate } from "@/app/actions";
+import { updateJobStatus, addJobItem, removeJobItem, sendJobEstimate, ownerBookJob, ownerDeclineJob } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -126,15 +126,91 @@ export default async function OwnerJob({ params }) {
           ) : !isClosed && job.status === "BOOKED" ? (
             (() => {
               const ownerQuoted = job.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
-              return (
+              const hasQuote = ownerQuoted && job.estMin > 0;
+              const customerAccepted = job.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
+              return hasQuote ? (
+                <>
+                  <div style={{ background: "linear-gradient(135deg, #f0fdf4, #eafaf1)", border: "2px solid #22c55e", borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
+                    <div className="row between" style={{ alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ fontWeight: 800, color: "#166534", fontSize: "1.02rem" }}>
+                        ✓ Estimate Sent: {money(job.estMin)}{job.estMin !== job.estMax ? ` – ${money(job.estMax)}` : ""}
+                      </div>
+                      {customerAccepted && (
+                        <span className="badge paid" style={{ fontSize: "0.8rem", fontWeight: 800 }}>
+                          ✓ Customer Accepted &amp; Confirmed
+                        </span>
+                      )}
+                    </div>
+                    <p className="small" style={{ color: "#15803d", margin: "0 0 14px", lineHeight: 1.45 }}>
+                      Your estimate price has been sent to the customer. You can now <b>Book</b> this service to begin the repair process or <b>Decline</b> the request:
+                    </p>
+
+                    <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+                      <form action={ownerBookJob} style={{ flex: 1 }}>
+                        <input type="hidden" name="jobId" value={job.id} />
+                        <button type="submit" className="btn btn-primary btn-block" style={{ fontWeight: 800, padding: "10px 18px", fontSize: "0.95rem" }}>
+                          ✓ Book Service (Start Repair 🔧)
+                        </button>
+                      </form>
+
+                      <form action={ownerDeclineJob}>
+                        <input type="hidden" name="jobId" value={job.id} />
+                        <button type="submit" className="btn btn-ghost" style={{ color: "#dc2626", borderColor: "#fca5a5", fontWeight: 700, padding: "10px 18px" }}>
+                          ✕ Decline
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <details style={{ marginBottom: 16 }}>
+                    <summary style={{ fontSize: "0.86rem", fontWeight: 600, color: "var(--muted)", cursor: "pointer" }}>
+                      Need to revise the estimate price? Click to edit
+                    </summary>
+                    <form action={sendJobEstimate} style={{ marginTop: 10 }}>
+                      <input type="hidden" name="jobId" value={job.id} />
+                      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Min Estimate ($)</label>
+                          <input
+                            type="number"
+                            name="estMin"
+                            defaultValue={job.estMin}
+                            placeholder="Min $"
+                            required
+                          />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Max Estimate ($)</label>
+                          <input
+                            type="number"
+                            name="estMax"
+                            defaultValue={job.estMax}
+                            placeholder="Max $"
+                          />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label className="tiny muted uppercase" style={{ fontWeight: 700 }}>Note to customer</label>
+                        <input
+                          name="note"
+                          placeholder="e.g. Includes inspection & replacement parts."
+                          defaultValue=""
+                        />
+                      </div>
+                      <button className="btn btn-dark btn-block">
+                        Update Estimate 🔔
+                      </button>
+                    </form>
+                  </details>
+                  <hr className="divider" />
+                </>
+              ) : (
                 <>
                   <h4 style={{ margin: "0 0 4px" }}>
-                    {ownerQuoted ? "Update Estimate Price" : "⚠️ Quote Manual Price to Customer"}
+                    ⚠️ Step 1: Quote Estimate Price to Customer
                   </h4>
                   <p className="muted small" style={{ margin: "0 0 10px" }}>
-                    {ownerQuoted
-                      ? "The customer has received this quote. You can update the price range or note below."
-                      : "Customer requested an estimate. Enter your price quote and optional note below to notify the customer."}
+                    Customer requested an estimate. Enter your price quote and optional note below. Once sent, you can Book or Decline the service.
                   </p>
                   <form action={sendJobEstimate} style={{ marginBottom: 10 }}>
                     <input type="hidden" name="jobId" value={job.id} />
@@ -144,7 +220,6 @@ export default async function OwnerJob({ params }) {
                         <input
                           type="number"
                           name="estMin"
-                          defaultValue={ownerQuoted && job.estMin > 0 ? job.estMin : ""}
                           placeholder="Min $"
                           required
                         />
@@ -154,7 +229,6 @@ export default async function OwnerJob({ params }) {
                         <input
                           type="number"
                           name="estMax"
-                          defaultValue={ownerQuoted && job.estMax > 0 ? job.estMax : ""}
                           placeholder="Max $"
                         />
                       </div>
@@ -164,11 +238,11 @@ export default async function OwnerJob({ params }) {
                       <input
                         name="note"
                         placeholder="e.g. Includes inspection & replacement parts. Ready in 2 hours."
-                        defaultValue={ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service."}
+                        defaultValue="Estimate quoted. Please confirm to book your service."
                       />
                     </div>
                     <button className="btn btn-primary btn-block">
-                      {ownerQuoted ? "Update Estimate 🔔" : "Send Estimate to Customer 🔔"}
+                      Send Estimate to Customer 🔔
                     </button>
                   </form>
                   <hr className="divider" />

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { STATUS_LABEL, STATUS_KEYS } from "@/lib/config";
 import { fmtDate, money, prettyReg } from "@/lib/format";
 import ContactButtons from "@/components/ContactButtons";
+import { ownerBookJob, ownerDeclineJob } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -115,9 +116,30 @@ export default async function OwnerJobs({ searchParams }) {
                         View Bill
                       </Link>
                     ) : !isClosed && j.status === "BOOKED" ? (
-                      <Link href={`/owner/bills/new?jobId=${j.id}&estimate=1`} className="btn btn-primary btn-sm">
-                        Estimated bill
-                      </Link>
+                      (() => {
+                        const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+                        const hasQuote = ownerQuoted && j.estMin > 0;
+                        return hasQuote ? (
+                          <>
+                            <form action={ownerBookJob} style={{ display: "inline" }}>
+                              <input type="hidden" name="jobId" value={j.id} />
+                              <button type="submit" className="btn btn-primary btn-sm" title="Book service and start repair process">
+                                ✓ Book
+                              </button>
+                            </form>{" "}
+                            <form action={ownerDeclineJob} style={{ display: "inline" }}>
+                              <input type="hidden" name="jobId" value={j.id} />
+                              <button type="submit" className="btn btn-ghost btn-sm" style={{ color: "#dc2626", borderColor: "#fca5a5" }} title="Decline request">
+                                ✕ Decline
+                              </button>
+                            </form>{" "}
+                          </>
+                        ) : (
+                          <Link href={`/owner/jobs/${j.id}`} className="btn btn-primary btn-sm">
+                            Quote Price →
+                          </Link>
+                        );
+                      })()
                     ) : null}{" "}
                     <Link href={`/owner/jobs/${j.id}`} className="btn btn-dark btn-sm">
                       Manage

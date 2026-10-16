@@ -22,6 +22,9 @@ export default async function OwnerLayout({ children }) {
 
   const serializedJobs = pendingJobs.map((j) => {
     const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+    const customerAccepted = j.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
+    const estimateLog = j.logs?.find((l) => l.note?.startsWith("Estimate sent:"));
+    const ownerNote = estimateLog?.note ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "") : "";
     return {
       id: j.id,
       code: j.code,
@@ -29,6 +32,8 @@ export default async function OwnerLayout({ children }) {
       estMin: ownerQuoted ? j.estMin : 0,
       estMax: ownerQuoted ? j.estMax : 0,
       ownerQuoted: !!ownerQuoted,
+      ownerNote,
+      customerAccepted: !!customerAccepted,
       status: j.status,
       createdAt: j.createdAt.toISOString(),
       vehicle: {

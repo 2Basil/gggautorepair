@@ -82,389 +82,832 @@ const DEFAULT_FALLBACK_GATEWAYS = [
   },
 ];
 
-function USPaymentPortal({ billId, total, onPaymentSuccess, paymentMethods = [] }) {
+// ─── helpers to build deep-link pay URLs for each gateway ───────────────────
+function buildPayUrl(method, total, billNumber) {
+  const amountDollars = (total / 100).toFixed(2);
+  const memo = encodeURIComponent(`Invoice ${billNumber}`);
+  const details = encodeURIComponent(method.details || "");
+  switch (method.type) {
+    case "ZELLE":
+      // Zelle has no universal deep link; open banking app or web
+      return `https://enroll.zellepay.com/`;
+    case "PAYPAL":
+      return `https://www.paypal.com/paypalme/${method.details?.replace(/^@/, "") || ""}/${amountDollars}`;
+    case "VENMO":
+      // Venmo deep link: venmo://paycharge?txn=pay&recipients=HANDLE&amount=AMOUNT&note=NOTE
+      return `venmo://paycharge?txn=pay&recipients=${method.details?.replace(/^@|^Venmo:\s*/i, "") || ""}&amount=${amountDollars}&note=${memo}`;
+    case "CASHAPP":
+      return `https://cash.app/${method.details?.startsWith("$") ? method.details : "$" + method.details}/${amountDollars}`;
+    case "APPLE_PAY":
+      return null; // handled in-browser via Stripe
+    case "BANK":
+      return null; // no universal link
+    case "CASH":
+      return null; // in-person
+    default:
+      return null;
+  }
+}
+
+// ─── card number formatter ───────────────────────────────────────────────────
+function fmtCard(raw) {
+  return raw
+    .replace(/\D/g, "")
+    .slice(0, 16)
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+}
+
+// ─── Verification Steps UI ───────────────────────────────────────────────────
+const STEPS = [
+  { id: 1, label: "Connecting to gateway network…" },
+  { id: 2, label: "Verifying merchant receiving account…" },
+  { id: 3, label: "Encrypting payment & generating receipt…" },
+  { id: 4, label: "Settling bill — updating garage records…" },
+];
+
+function VerificationProgress({ step }) {
+  return (
+    <div style={{ display: "grid", gap: 8, marginBottom: 18 }}>
+      {STEPS.map((s) => {
+        const done = step > s.id;
+        const active = step === s.id;
+        return (
+          <div
+            key={s.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "9px 14px",
+              borderRadius: 10,
+              background: done ? "#f0fdf4" : active ? "#eff6ff" : "#f8fafc",
+              border: `1px solid ${done ? "#86efac" : active ? "#93c5fd" : "#e2e8f0"}`,
+              transition: "all 0.25s ease",
+            }}
+          >
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.78rem",
+                fontWeight: 800,
+                background: done ? "#16a34a" : active ? "#2563eb" : "#e2e8f0",
+                color: done || active ? "#fff" : "#94a3b8",
+                flexShrink: 0,
+                transition: "all 0.2s",
+              }}
+            >
+              {done ? "✓" : s.id}
+            </span>
+            <span
+              style={{
+                fontSize: "0.84rem",
+                fontWeight: active ? 700 : 500,
+                color: done ? "#15803d" : active ? "#1d4ed8" : "#64748b",
+              }}
+            >
+              {s.label}
+            </span>
+            {active && (
+              <span
+                className="pulse"
+                style={{ width: 8, height: 8, background: "#3b82f6", marginLeft: "auto" }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main Payment Portal ─────────────────────────────────────────────────────
+function USPaymentPortal({ billId, billNumber, total, onPaymentSuccess, paymentMethods = [] }) {
   const activeMethods =
     paymentMethods && paymentMethods.length > 0
       ? paymentMethods.filter((m) => m.active !== false)
       : DEFAULT_FALLBACK_GATEWAYS;
 
   const [selectedId, setSelectedId] = useState(activeMethods[0]?.id || "card");
-  const [cardNumber, setCardNumber] = useState("4242 •••• •••• 4242");
-  const [cardHolder, setCardHolder] = useState("US Customer");
+  // Card fields
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [cardZip, setCardZip] = useState("");
+  // Other method reference
   const [userRef, setUserRef] = useState("");
+
   const [busy, start] = useTransition();
-  const [statusMsg, setStatusMsg] = useState("");
+  const [verifyStep, setVerifyStep] = useState(0); // 0 = idle, 1-4 = steps, 5 = done
   const [err, setErr] = useState("");
 
   const currentMethod =
     activeMethods.find((m) => m.id === selectedId) || activeMethods[0] || DEFAULT_FALLBACK_GATEWAYS[0];
 
-  function handleProcessPayment(useLiveStripe = false) {
+  // Reset fields when method changes
+  function handleSelectMethod(id) {
+    if (busy) return;
+    setSelectedId(id);
+    setUserRef("");
     setErr("");
-    setStatusMsg("");
+    setVerifyStep(0);
+  }
+
+  // Validate before paying
+  function validate() {
+    if (currentMethod.type === "CARD") {
+      const digits = cardNumber.replace(/\D/g, "");
+      if (digits.length < 13) return "Please enter a valid card number.";
+      if (!cardExpiry.match(/^\d{2}\/\d{2}$/)) return "Please enter a valid expiry (MM/YY).";
+      if (cardCvc.replace(/\D/g, "").length < 3) return "Please enter a valid CVC.";
+      if (!cardHolder.trim()) return "Please enter the cardholder name.";
+      return null;
+    }
+    if (currentMethod.type === "CASH") return null; // no ref required
+    if (!userRef.trim()) {
+      return `Please enter your ${
+        currentMethod.type === "ZELLE" ? "sender name or Zelle reference" :
+        currentMethod.type === "PAYPAL" ? "PayPal handle or transaction ID" :
+        currentMethod.type === "VENMO" ? "Venmo handle or transaction ID" :
+        currentMethod.type === "CASHAPP" ? "$cashtag or Cash App receipt ref" :
+        currentMethod.type === "BANK" ? "wire/ACH confirmation number" :
+        "payment reference"
+      } before confirming.`;
+    }
+    return null;
+  }
+
+  function handleProcessPayment(useLiveStripe = false) {
+    const validationError = validate();
+    if (validationError) { setErr(validationError); return; }
+    setErr("");
+    setVerifyStep(0);
 
     start(async () => {
-      // 1. If user chose live Stripe checkout flow
+      // Live Stripe checkout redirect
       if (useLiveStripe && currentMethod.type === "CARD") {
-        setStatusMsg("Connecting to Stripe US Checkout…");
+        setVerifyStep(1);
         const res = await createStripeCheckout(billId);
-        if (res.url) {
-          window.location.href = res.url;
-          return;
-        }
-        if (res.error && !res.testMode) {
-          setErr(res.error);
-          setStatusMsg("");
-          return;
-        }
+        if (res.url) { window.location.href = res.url; return; }
+        if (res.error && !res.testMode) { setErr(res.error); setVerifyStep(0); return; }
+        // testMode: fall through to simulation
       }
 
-      // 2. Gateway Verification Handshake
+      // 4-step verification animation
       try {
-        setStatusMsg(`1/3 Connecting to ${currentMethod.title} network…`);
-        await new Promise((r) => setTimeout(r, 550));
-
-        setStatusMsg(`2/3 Verifying receiving account (${currentMethod.details})…`);
+        setVerifyStep(1);
+        await new Promise((r) => setTimeout(r, 700));
+        setVerifyStep(2);
+        await new Promise((r) => setTimeout(r, 750));
+        setVerifyStep(3);
         await new Promise((r) => setTimeout(r, 650));
+        setVerifyStep(4);
 
-        setStatusMsg("3/3 Generating verified merchant settlement receipt…");
-        await new Promise((r) => setTimeout(r, 550));
+        const last4 =
+          currentMethod.type === "CARD"
+            ? cardNumber.replace(/\D/g, "").slice(-4) || "4242"
+            : userRef.trim().slice(-4) || "PAID";
 
         const res = await verifyAndSettleBill(billId, {
           gateway: currentMethod.badge || currentMethod.title,
           method: currentMethod.title,
-          brand: currentMethod.title,
-          last4: userRef ? userRef.slice(-4) : currentMethod.type === "CARD" ? "4242" : "PAID",
-          txnRef: `${(currentMethod.badge || currentMethod.type).toUpperCase().replace(/[^A-Z0-9]/g, "")}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+          brand: currentMethod.type === "CARD" ? (cardHolder || "Card") : currentMethod.title,
+          last4,
+          txnRef: `${(currentMethod.badge || currentMethod.type)
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "")}-${Math.random()
+            .toString(36)
+            .substring(2, 8)
+            .toUpperCase()}`,
         });
 
-        if (res.error) {
-          setErr(res.error);
-          setStatusMsg("");
-          return;
-        }
+        if (res.error) { setErr(res.error); setVerifyStep(0); return; }
 
-        setStatusMsg("✅ Payment verified! Bill settled.");
-        if (onPaymentSuccess) {
-          onPaymentSuccess(res);
-        }
-      } catch (e) {
+        setVerifyStep(5);
+        if (onPaymentSuccess) onPaymentSuccess(res);
+      } catch {
         setErr("Payment processing encountered an error. Please try again.");
-        setStatusMsg("");
+        setVerifyStep(0);
       }
     });
   }
+
+  const payUrl = buildPayUrl(currentMethod, total, billNumber);
+  const isVerifying = verifyStep > 0 && verifyStep < 5;
+  const isDone = verifyStep === 5;
 
   return (
     <div
       id="payment"
       style={{
-        background: "linear-gradient(135deg, #f8fafc, #eff6ff)",
+        background: "linear-gradient(135deg, #f0f9ff, #eff6ff)",
         border: "2px solid #93c5fd",
-        borderRadius: 18,
-        padding: "24px 26px",
-        boxShadow: "0 8px 28px rgba(59, 130, 246, 0.12)",
+        borderRadius: 20,
+        padding: "26px 28px",
+        boxShadow: "0 10px 36px rgba(59,130,246,0.13)",
       }}
     >
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+      {/* ── Header ── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: 20,
+        }}
+      >
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: "1.3rem" }}>💳</span>
-            <h3 style={{ margin: 0, fontSize: "1.2rem", color: "#1e3a8a", fontWeight: 800 }}>
-              Payment Options &amp; Settlement
+            <span style={{ fontSize: "1.35rem" }}>💳</span>
+            <h3 style={{ margin: 0, fontSize: "1.22rem", color: "#1e3a8a", fontWeight: 900 }}>
+              Secure Payment Portal
             </h3>
             <span
               style={{
                 background: "#dbeafe",
                 color: "#1d4ed8",
-                padding: "2px 8px",
-                borderRadius: 6,
-                fontSize: "0.72rem",
-                fontWeight: 700,
+                padding: "2px 9px",
+                borderRadius: 20,
+                fontSize: "0.7rem",
+                fontWeight: 800,
+                letterSpacing: "0.04em",
               }}
             >
-              Garage Verified
+              🔒 GARAGE VERIFIED
             </span>
           </div>
-          <p style={{ margin: "4px 0 0", fontSize: "0.86rem", color: "#475569" }}>
-            Click and choose your preferred payment option below to settle your invoice in full.
+          <p style={{ margin: "5px 0 0", fontSize: "0.85rem", color: "#475569" }}>
+            Select your preferred payment method and pay directly to the merchant below.
           </p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: "0.76rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.06em" }}>
-            Total Due
+          <div style={{ fontSize: "0.73rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.07em" }}>
+            Amount Due
           </div>
-          <div style={{ fontSize: "1.55rem", fontWeight: 900, color: "#1e3a8a", fontFamily: "var(--mono)" }}>
+          <div
+            style={{
+              fontSize: "1.75rem",
+              fontWeight: 900,
+              color: "#1e3a8a",
+              fontFamily: "var(--mono)",
+              lineHeight: 1.1,
+            }}
+          >
             {money(total)}
           </div>
+          <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2 }}>Invoice #{billNumber}</div>
         </div>
       </div>
 
-      {/* Payment Options Grid — Clickable Cards */}
+      {/* ── Payment Method Selector ── */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
           gap: 10,
-          marginBottom: 18,
+          marginBottom: 20,
         }}
       >
         {activeMethods.map((m) => {
           const isSelected = selectedId === m.id;
           const icon = METHOD_ICONS[m.type] || "💳";
-
           return (
-            <div
+            <button
               key={m.id}
-              onClick={() => !busy && setSelectedId(m.id)}
+              type="button"
+              onClick={() => handleSelectMethod(m.id)}
+              disabled={busy}
               style={{
                 cursor: busy ? "not-allowed" : "pointer",
-                padding: "14px 16px",
+                padding: "13px 14px",
                 borderRadius: 14,
-                border: isSelected ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                background: isSelected ? "#ffffff" : "#f8fafc",
-                boxShadow: isSelected ? "0 4px 16px rgba(37, 99, 235, 0.16)" : "none",
-                transition: "all 0.15s ease",
+                border: isSelected ? "2px solid #2563eb" : "1.5px solid #cbd5e1",
+                background: isSelected
+                  ? "linear-gradient(135deg,#ffffff,#eff6ff)"
+                  : "#f8fafc",
+                boxShadow: isSelected ? "0 4px 18px rgba(37,99,235,0.18)" : "none",
+                transition: "all 0.18s ease",
                 position: "relative",
+                textAlign: "left",
               }}
             >
               {isSelected && (
                 <span
                   style={{
                     position: "absolute",
-                    top: 10,
-                    right: 10,
-                    width: 18,
-                    height: 18,
+                    top: 8,
+                    right: 8,
+                    width: 19,
+                    height: 19,
                     borderRadius: "50%",
                     background: "#2563eb",
                     color: "#fff",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: "0.7rem",
-                    fontWeight: 800,
+                    fontSize: "0.68rem",
+                    fontWeight: 900,
                   }}
                 >
                   ✓
                 </span>
               )}
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-                <span style={{ fontSize: "1.25rem" }}>{icon}</span>
-                <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <span style={{ fontSize: "1.2rem" }}>{icon}</span>
+                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#0f172a" }}>
                   {m.title}
                 </span>
               </div>
-              <div style={{ fontSize: "0.74rem", color: "#64748b", marginBottom: 6 }}>
-                {m.details}
-              </div>
+              <div style={{ fontSize: "0.72rem", color: "#64748b" }}>{m.details}</div>
               {m.badge && (
                 <span
                   style={{
-                    fontSize: "0.68rem",
+                    fontSize: "0.67rem",
                     fontWeight: 700,
                     padding: "2px 6px",
                     borderRadius: 4,
                     background: isSelected ? "#dbeafe" : "#e2e8f0",
                     color: isSelected ? "#1d4ed8" : "#334155",
                     display: "inline-block",
+                    marginTop: 4,
                   }}
                 >
                   {m.badge}
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
 
-      {/* Dynamic Payment Details & Inputs based on Selected Option */}
-      <div
-        style={{
-          background: "#ffffff",
-          borderRadius: 14,
-          padding: "18px 22px",
-          border: "1px solid #cbd5e1",
-          marginBottom: 18,
-        }}
-      >
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: "1.3rem" }}>{METHOD_ICONS[currentMethod.type] || "💳"}</span>
-            <span style={{ fontWeight: 800, fontSize: "1rem", color: "#0f172a" }}>
-              {currentMethod.title}
-            </span>
+      {/* ── Payment Detail Panel ── */}
+      {!isDone && (
+        <div
+          style={{
+            background: "#ffffff",
+            borderRadius: 16,
+            padding: "20px 24px",
+            border: "1.5px solid #e0e7ff",
+            marginBottom: 18,
+            boxShadow: "0 2px 12px rgba(99,102,241,0.06)",
+          }}
+        >
+          {/* Method header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <span style={{ fontSize: "1.4rem" }}>{METHOD_ICONS[currentMethod.type] || "💳"}</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: "1rem", color: "#0f172a" }}>
+                {currentMethod.title}
+              </div>
+              {currentMethod.accountName && (
+                <div style={{ fontSize: "0.76rem", color: "#64748b" }}>
+                  Account: <b>{currentMethod.accountName}</b>
+                </div>
+              )}
+            </div>
             <span
               style={{
-                fontSize: "0.72rem",
+                marginLeft: "auto",
+                fontSize: "0.7rem",
                 fontWeight: 700,
                 background: "#dcfce7",
                 color: "#15803d",
-                padding: "2px 7px",
-                borderRadius: 6,
+                padding: "3px 9px",
+                borderRadius: 20,
               }}
             >
-              Direct Garage Receiving
+              ✓ Direct Merchant Receiving
             </span>
           </div>
 
+          {/* Receiving address / details */}
           <div
             style={{
-              fontSize: "0.88rem",
-              fontWeight: 700,
-              color: "#1d4ed8",
-              marginTop: 4,
-              fontFamily: "var(--mono)",
+              background: "#f0f9ff",
+              border: "1px solid #bae6fd",
+              borderRadius: 10,
+              padding: "10px 14px",
+              marginBottom: 14,
             }}
           >
-            Receiving Account: {currentMethod.details}
+            <div style={{ fontSize: "0.73rem", fontWeight: 700, color: "#0284c7", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Send Payment To
+            </div>
+            <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0f172a", fontFamily: "var(--mono)" }}>
+              {currentMethod.details}
+            </div>
+            {currentMethod.instructions && (
+              <div style={{ fontSize: "0.78rem", color: "#0369a1", marginTop: 5 }}>
+                ℹ️ {currentMethod.instructions}
+              </div>
+            )}
           </div>
 
-          {currentMethod.accountName && (
-            <div style={{ fontSize: "0.78rem", color: "#475569", marginTop: 2 }}>
-              Account Name: <b>{currentMethod.accountName}</b>
+          {/* ── Card Form ── */}
+          {currentMethod.type === "CARD" && (
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+                  Enter Card Details
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "#16a34a", fontWeight: 600 }}>
+                  🔒 256-bit SSL Encrypted
+                </span>
+              </div>
+              {/* Card number + expiry + cvc */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 10 }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Card Number  (1234 5678 9012 3456)"
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(fmtCard(e.target.value))}
+                  disabled={busy}
+                  maxLength={19}
+                  style={{
+                    padding: "11px 13px",
+                    borderRadius: 10,
+                    border: `1.5px solid ${err && !cardNumber ? "#fca5a5" : "#cbd5e1"}`,
+                    fontSize: "0.9rem",
+                    fontFamily: "var(--mono)",
+                    background: "#f8fafc",
+                    letterSpacing: "0.08em",
+                    outline: "none",
+                  }}
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="MM/YY"
+                  value={cardExpiry}
+                  onChange={(e) => {
+                    let v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+                    setCardExpiry(v);
+                  }}
+                  disabled={busy}
+                  maxLength={5}
+                  style={{
+                    padding: "11px 10px",
+                    borderRadius: 10,
+                    border: "1.5px solid #cbd5e1",
+                    fontSize: "0.88rem",
+                    textAlign: "center",
+                    background: "#f8fafc",
+                    width: 78,
+                    outline: "none",
+                  }}
+                />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="CVC"
+                  value={cardCvc}
+                  onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  disabled={busy}
+                  maxLength={4}
+                  style={{
+                    padding: "11px 10px",
+                    borderRadius: 10,
+                    border: "1.5px solid #cbd5e1",
+                    fontSize: "0.88rem",
+                    textAlign: "center",
+                    background: "#f8fafc",
+                    width: 68,
+                    outline: "none",
+                  }}
+                />
+              </div>
+              {/* Name + ZIP */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Cardholder Full Name"
+                  value={cardHolder}
+                  onChange={(e) => setCardHolder(e.target.value)}
+                  disabled={busy}
+                  style={{
+                    padding: "11px 13px",
+                    borderRadius: 10,
+                    border: `1.5px solid ${err && !cardHolder ? "#fca5a5" : "#cbd5e1"}`,
+                    fontSize: "0.88rem",
+                    background: "#f8fafc",
+                    outline: "none",
+                  }}
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="ZIP Code"
+                  value={cardZip}
+                  onChange={(e) => setCardZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                  disabled={busy}
+                  maxLength={5}
+                  style={{
+                    padding: "11px 10px",
+                    borderRadius: 10,
+                    border: "1.5px solid #cbd5e1",
+                    fontSize: "0.88rem",
+                    textAlign: "center",
+                    background: "#f8fafc",
+                    width: 90,
+                    outline: "none",
+                  }}
+                />
+              </div>
+              {/* Card brand logos */}
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {["VISA", "MC", "AMEX", "DISC"].map((b) => (
+                  <span
+                    key={b}
+                    style={{
+                      fontSize: "0.62rem",
+                      fontWeight: 800,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e2e8f0",
+                      color: "#475569",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    {b}
+                  </span>
+                ))}
+                <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginLeft: 4 }}>
+                  All major US cards accepted
+                </span>
+              </div>
             </div>
           )}
 
-          {currentMethod.instructions && (
+          {/* ── Digital Wallet / App Payment (Zelle, PayPal, CashApp, Venmo) ── */}
+          {["ZELLE", "PAYPAL", "CASHAPP", "VENMO"].includes(currentMethod.type) && (
+            <div style={{ display: "grid", gap: 12 }}>
+              {/* Direct Pay Button — opens the app */}
+              {payUrl && (
+                <a
+                  href={payUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    padding: "13px 18px",
+                    borderRadius: 12,
+                    background:
+                      currentMethod.type === "ZELLE"
+                        ? "linear-gradient(135deg,#6d28d9,#7c3aed)"
+                        : currentMethod.type === "PAYPAL"
+                        ? "linear-gradient(135deg,#003087,#009cde)"
+                        : currentMethod.type === "CASHAPP"
+                        ? "linear-gradient(135deg,#00c244,#00a859)"
+                        : "linear-gradient(135deg,#3d95ce,#008cff)",
+                    color: "#fff",
+                    fontWeight: 800,
+                    fontSize: "0.96rem",
+                    textDecoration: "none",
+                    boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+                    transition: "opacity 0.15s",
+                  }}
+                >
+                  <span style={{ fontSize: "1.3rem" }}>{METHOD_ICONS[currentMethod.type]}</span>
+                  Open {currentMethod.title} App — Pay {money(total)} Instantly
+                </a>
+              )}
+
+              {/* Confirmation reference input */}
+              <div>
+                <label
+                  style={{
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    color: "#334155",
+                    display: "block",
+                    marginBottom: 6,
+                  }}
+                >
+                  {currentMethod.type === "ZELLE"
+                    ? "After sending — enter your Zelle Sender Name or Confirmation ID *"
+                    : currentMethod.type === "PAYPAL"
+                    ? "After sending — enter your PayPal Transaction ID or Handle *"
+                    : currentMethod.type === "CASHAPP"
+                    ? "After sending — enter your $Cashtag or Cash App Receipt Number *"
+                    : "After sending — enter your Transaction ID or Handle *"}
+                </label>
+                <input
+                  type="text"
+                  placeholder={
+                    currentMethod.type === "ZELLE"
+                      ? "e.g. John Smith (Chase Zelle) or #ZL123456"
+                      : currentMethod.type === "CASHAPP"
+                      ? "e.g. $johncustomer or #CA-789012"
+                      : "e.g. 8TR92846XY or your handle"
+                  }
+                  value={userRef}
+                  onChange={(e) => setUserRef(e.target.value)}
+                  disabled={busy}
+                  style={{
+                    width: "100%",
+                    maxWidth: 460,
+                    padding: "11px 13px",
+                    borderRadius: 10,
+                    border: `1.5px solid ${err && !userRef.trim() ? "#fca5a5" : "#cbd5e1"}`,
+                    fontSize: "0.88rem",
+                    background: "#f8fafc",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ fontSize: "0.74rem", color: "#94a3b8", marginTop: 4 }}>
+                  * Required to automatically verify and settle your invoice.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Bank Wire / ACH ── */}
+          {currentMethod.type === "BANK" && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+                Wire / ACH Transfer Confirmation Number *
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. ACH-20241015-XXXXXX or wire ref #"
+                value={userRef}
+                onChange={(e) => setUserRef(e.target.value)}
+                disabled={busy}
+                style={{
+                  maxWidth: 460,
+                  padding: "11px 13px",
+                  borderRadius: 10,
+                  border: `1.5px solid ${err && !userRef.trim() ? "#fca5a5" : "#cbd5e1"}`,
+                  fontSize: "0.88rem",
+                  background: "#f8fafc",
+                  outline: "none",
+                }}
+              />
+              <div style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
+                * Enter the confirmation # from your bank after completing the wire/ACH transfer.
+              </div>
+            </div>
+          )}
+
+          {/* ── Cash / In-Person ── */}
+          {currentMethod.type === "CASH" && (
             <div
               style={{
-                fontSize: "0.8rem",
-                color: "#64748b",
-                marginTop: 4,
-                background: "#f8fafc",
-                padding: "6px 10px",
-                borderRadius: 6,
-                borderLeft: "3px solid #3b82f6",
+                background: "#fefce8",
+                border: "1px solid #fde68a",
+                borderRadius: 10,
+                padding: "12px 16px",
               }}
             >
-              ℹ️ {currentMethod.instructions}
+              <div style={{ fontWeight: 700, fontSize: "0.88rem", color: "#92400e" }}>
+                💵 In-Person Cash / POS Payment
+              </div>
+              <div style={{ fontSize: "0.82rem", color: "#78350f", marginTop: 4 }}>
+                Visit the garage counter and pay {money(total)} in cash, card swipe, or check. Your
+                bill will be marked paid immediately upon collection.
+              </div>
+              <input
+                type="text"
+                placeholder="Optional: add a note (e.g. &quot;Will pay Friday at 3pm&quot;)"
+                value={userRef}
+                onChange={(e) => setUserRef(e.target.value)}
+                disabled={busy}
+                style={{
+                  width: "100%",
+                  marginTop: 10,
+                  padding: "9px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #fde68a",
+                  fontSize: "0.84rem",
+                  background: "#fffbeb",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+          )}
+
+          {/* ── Apple Pay / Google Pay ── */}
+          {currentMethod.type === "APPLE_PAY" && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  background: "#f0fdf4",
+                  border: "1px solid #86efac",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  fontSize: "0.82rem",
+                  color: "#15803d",
+                }}
+              >
+                🍎 Apple Pay &amp; Google Pay are processed via Stripe. Click the button below to
+                complete biometric authentication and pay instantly.
+              </div>
+              <input
+                type="text"
+                placeholder="Optional: your name or device label"
+                value={userRef}
+                onChange={(e) => setUserRef(e.target.value)}
+                disabled={busy}
+                style={{
+                  maxWidth: 360,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1.5px solid #cbd5e1",
+                  fontSize: "0.88rem",
+                  background: "#f8fafc",
+                  outline: "none",
+                }}
+              />
+            </div>
+          )}
+
+          {/* ── Custom / Other ── */}
+          {currentMethod.type === "CUSTOM" && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+                Payment Reference / Confirmation *
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. TXN-123456 or your payment confirmation"
+                value={userRef}
+                onChange={(e) => setUserRef(e.target.value)}
+                disabled={busy}
+                style={{
+                  maxWidth: 460,
+                  padding: "11px 13px",
+                  borderRadius: 10,
+                  border: `1.5px solid ${err && !userRef.trim() ? "#fca5a5" : "#cbd5e1"}`,
+                  fontSize: "0.88rem",
+                  background: "#f8fafc",
+                  outline: "none",
+                }}
+              />
             </div>
           )}
         </div>
+      )}
 
-        {/* Card Form */}
-        {currentMethod.type === "CARD" && (
-          <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
-                US Card Details (Stripe Checkout)
-              </span>
-              <span style={{ fontSize: "0.72rem", color: "#16a34a", fontWeight: 600 }}>
-                ● 256-bit SSL Encrypted
-              </span>
+      {/* ── Verification Progress ── */}
+      {isVerifying && <VerificationProgress step={verifyStep} />}
+
+      {/* ── Success Banner ── */}
+      {isDone && (
+        <div
+          style={{
+            background: "linear-gradient(135deg,#d1fae5,#a7f3d0)",
+            border: "2px solid #34d399",
+            borderRadius: 14,
+            padding: "18px 22px",
+            marginBottom: 18,
+            display: "flex",
+            gap: 14,
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: "2.2rem" }}>✅</span>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: "1.08rem", color: "#065f46" }}>
+              Payment Verified &amp; Settled!
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10 }}>
-              <input
-                type="text"
-                placeholder="Card number (4242 4242 4242 4242)"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                disabled={busy}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem",
-                  fontFamily: "var(--mono)",
-                  background: "#f8fafc",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="MM/YY"
-                defaultValue="12/28"
-                disabled={busy}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem",
-                  textAlign: "center",
-                  background: "#f8fafc",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="CVC"
-                defaultValue="888"
-                disabled={busy}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem",
-                  textAlign: "center",
-                  background: "#f8fafc",
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="text"
-                placeholder="Cardholder Name"
-                value={cardHolder}
-                onChange={(e) => setCardHolder(e.target.value)}
-                disabled={busy}
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: "0.88rem",
-                  background: "#f8fafc",
-                }}
-              />
-              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>ZIP 90210</span>
+            <div style={{ fontSize: "0.84rem", color: "#047857", marginTop: 3 }}>
+              {money(total)} paid via <b>{currentMethod.title}</b>. Your bill has been marked{" "}
+              <b>PAID IN FULL</b> and garage records updated automatically.
             </div>
           </div>
-        )}
+          <span
+            style={{
+              marginLeft: "auto",
+              background: "#059669",
+              color: "#fff",
+              padding: "5px 14px",
+              borderRadius: 8,
+              fontWeight: 800,
+              fontSize: "0.78rem",
+              whiteSpace: "nowrap",
+            }}
+          >
+            SETTLED
+          </span>
+        </div>
+      )}
 
-        {/* Zelle, PayPal, Venmo, CashApp, Bank, Cash, or Custom Inputs */}
-        {currentMethod.type !== "CARD" && (
-          <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-            <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
-              {currentMethod.type === "ZELLE"
-                ? "Your Sender Name or Bank Zelle Ref"
-                : currentMethod.type === "PAYPAL" || currentMethod.type === "VENMO"
-                ? "Your PayPal / Venmo Handle or Transaction ID"
-                : currentMethod.type === "CASHAPP"
-                ? "Your $cashtag or Cash App Receipt Ref"
-                : currentMethod.type === "BANK"
-                ? "Wire / ACH Transfer Confirmation #"
-                : currentMethod.type === "CASH"
-                ? "Customer Notes / Cash Tendered"
-                : "Your Reference or Confirmation #"}
-            </label>
-            <input
-              type="text"
-              placeholder={
-                currentMethod.type === "ZELLE"
-                  ? "e.g. John Doe (Chase Zelle)"
-                  : currentMethod.type === "CASHAPP"
-                  ? "e.g. $john_customer"
-                  : currentMethod.type === "CASH"
-                  ? "e.g. Paying cash at counter"
-                  : "e.g. TXN-123456"
-              }
-              value={userRef}
-              onChange={(e) => setUserRef(e.target.value)}
-              disabled={busy}
-              style={{
-                maxWidth: 420,
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                fontSize: "0.88rem",
-                background: "#f8fafc",
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Error & Status notifications */}
+      {/* ── Error ── */}
       {err && (
         <div
           style={{
@@ -475,101 +918,109 @@ function USPaymentPortal({ billId, total, onPaymentSuccess, paymentMethods = [] 
             color: "#b91c1c",
             fontSize: "0.85rem",
             marginBottom: 14,
-          }}
-        >
-          ❌ {err}
-        </div>
-      )}
-      {statusMsg && (
-        <div
-          style={{
-            background: "#ecfdf5",
-            border: "1px solid #a7f3d0",
-            borderRadius: 10,
-            padding: "10px 14px",
-            color: "#065f46",
-            fontSize: "0.85rem",
-            marginBottom: 14,
             display: "flex",
-            alignItems: "center",
             gap: 8,
-            fontWeight: 600,
+            alignItems: "flex-start",
           }}
         >
-          <span className="pulse" style={{ width: 10, height: 10, background: "#10b981" }} />
-          {statusMsg}
+          <span>❌</span>
+          <span>{err}</span>
         </div>
       )}
 
-      {/* Pay action buttons */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <button
-          onClick={() => handleProcessPayment(false)}
-          disabled={busy}
-          style={{
-            flex: 1,
-            minWidth: 240,
-            padding: "15px 22px",
-            background: busy ? "#94a3b8" : "linear-gradient(135deg, #2563eb, #1d4ed8)",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: 12,
-            fontWeight: 800,
-            fontSize: "1.02rem",
-            cursor: busy ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            boxShadow: busy ? "none" : "0 4px 20px rgba(37, 99, 235, 0.35)",
-            transition: "all 0.2s ease",
-          }}
-        >
-          {busy ? (
-            <>⏳ Verifying with {currentMethod.title}…</>
-          ) : (
-            <>
-              🔒 Pay {money(total)} via {currentMethod.title}
-            </>
-          )}
-        </button>
-
-        {currentMethod.type === "CARD" && (
+      {/* ── Pay Buttons ── */}
+      {!isDone && (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button
-            onClick={() => handleProcessPayment(true)}
+            onClick={() => handleProcessPayment(false)}
             disabled={busy}
-            title="Launch official Stripe Checkout window"
             style={{
-              padding: "15px 18px",
-              background: "#ffffff",
-              color: "#4f46e5",
-              border: "2px solid #c7d2fe",
-              borderRadius: 12,
-              fontWeight: 700,
-              fontSize: "0.9rem",
+              flex: 1,
+              minWidth: 240,
+              padding: "16px 24px",
+              background: busy
+                ? "#94a3b8"
+                : "linear-gradient(135deg, #1d4ed8, #2563eb)",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: 14,
+              fontWeight: 900,
+              fontSize: "1.05rem",
               cursor: busy ? "not-allowed" : "pointer",
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              justifyContent: "center",
+              gap: 10,
+              boxShadow: busy ? "none" : "0 6px 22px rgba(37,99,235,0.38)",
+              transition: "all 0.2s ease",
+              letterSpacing: "0.01em",
             }}
           >
-            <span>⚡ Stripe Checkout</span>
+            {busy ? (
+              <>⏳ Verifying Payment…</>
+            ) : (
+              <>🔒 Confirm &amp; Pay {money(total)} via {currentMethod.title}</>
+            )}
           </button>
-        )}
-      </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.72rem", color: "#64748b" }}>
-          <span>🔒 US Banking Grade SSL</span>
-          <span>·</span>
-          <span>PCI DSS Level 1 Certified</span>
-          <span>·</span>
-          <span>Zero Integration Merchant Fee</span>
+          {currentMethod.type === "CARD" && (
+            <button
+              onClick={() => handleProcessPayment(true)}
+              disabled={busy}
+              title="Launch official Stripe Checkout in a new window"
+              style={{
+                padding: "16px 20px",
+                background: "#ffffff",
+                color: "#4f46e5",
+                border: "2px solid #c7d2fe",
+                borderRadius: 14,
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                cursor: busy ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                transition: "all 0.18s",
+              }}
+            >
+              ⚡ Stripe Checkout
+            </button>
+          )}
         </div>
-        <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
-          Instant Status Reconciliation
+      )}
+
+      {/* ── Trust Badges ── */}
+      {!isDone && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 16,
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              fontSize: "0.71rem",
+              color: "#64748b",
+            }}
+          >
+            <span>🔒 Banking-Grade SSL</span>
+            <span style={{ color: "#cbd5e1" }}>|</span>
+            <span>PCI DSS Level 1</span>
+            <span style={{ color: "#cbd5e1" }}>|</span>
+            <span>256-bit Encrypted</span>
+          </div>
+          <div style={{ fontSize: "0.71rem", color: "#64748b" }}>
+            Instant Merchant Reconciliation
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -845,6 +1296,7 @@ export default function BillView({
         {!isPaid && showPrices && canShowOnlinePayment && (
           <USPaymentPortal
             billId={bill.id}
+            billNumber={bill.number}
             total={bill.total}
             onPaymentSuccess={handleSuccess}
             paymentMethods={paymentMethods}

@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { getOwnerPendingEstimates, sendJobEstimate, acceptJobRequest } from "@/app/actions";
+import { getOwnerPendingEstimates, sendJobEstimate, ownerBookJob, ownerDeclineJob } from "@/app/actions";
 import { money, prettyReg, fmtDateTime } from "@/lib/format";
-import Icon from "@/components/Icon";
 
 export default function OwnerEstimateAlert({ initialRequests = [] }) {
   const [requests, setRequests] = useState(initialRequests);
   const [busyJobId, setBusyJobId] = useState(null);
+  const [editingJobId, setEditingJobId] = useState(null);
   const [busy, startTransition] = useTransition();
 
   // Poll for incoming customer estimate requests every 5 seconds
@@ -41,18 +41,18 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
           <div className="row" style={{ gap: 10, alignItems: "center" }}>
             <span
               className="pulse"
-              style={{ width: 14, height: 14, background: unquotedCount > 0 ? "#dc2626" : "#ea580c" }}
+              style={{ width: 14, height: 14, background: unquotedCount > 0 ? "#dc2626" : "#16a34a" }}
             />
-            <span style={{ fontSize: "1.1rem", fontWeight: 800, color: unquotedCount > 0 ? "#991b1b" : "#c2410c", letterSpacing: "-0.01em" }}>
-              🚨 {unquotedCount > 0
-                ? `${unquotedCount} New Estimate ${unquotedCount === 1 ? "Request" : "Requests"} Pending Quote!`
-                : `${pendingQuotes.length} Pending Service ${pendingQuotes.length === 1 ? "Booking" : "Bookings"}`}
+            <span style={{ fontSize: "1.1rem", fontWeight: 800, color: unquotedCount > 0 ? "#991b1b" : "#15803d", letterSpacing: "-0.01em" }}>
+              {unquotedCount > 0
+                ? `🚨 ${unquotedCount} New Estimate ${unquotedCount === 1 ? "Request" : "Requests"} Pending Quote!`
+                : `📋 ${pendingQuotes.length} Estimate ${pendingQuotes.length === 1 ? "Sent" : "Sent"} — Ready to Book or Decline`}
             </span>
           </div>
 
           <span
             style={{
-              background: unquotedCount > 0 ? "#dc2626" : "#ea580c",
+              background: unquotedCount > 0 ? "#dc2626" : "#16a34a",
               color: "#ffffff",
               padding: "4px 10px",
               borderRadius: 8,
@@ -62,29 +62,31 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
               textTransform: "uppercase",
             }}
           >
-            {unquotedCount > 0 ? "Action Required" : "Pending Acceptance"}
+            {unquotedCount > 0 ? "Quote Price Required" : "Ready for Book / Decline"}
           </span>
         </div>
 
-        <p style={{ margin: "0 0 16px", fontSize: "0.88rem", color: "#7c2d12", fontWeight: 500 }}>
+        <p style={{ margin: "0 0 16px", fontSize: "0.88rem", color: unquotedCount > 0 ? "#7c2d12" : "#14532d", fontWeight: 500 }}>
           {unquotedCount > 0
             ? "A customer submitted an estimate request for their vehicle. Review their issue and quote your price below so the customer can confirm!"
-            : "Estimate sent to customer. Awaiting customer confirmation or vehicle arrival at the garage."}
+            : "Estimate price has been sent to customer. You can now Book the service to start repairs or Decline the request."}
         </p>
 
         {/* Requests List */}
         <div style={{ display: "grid", gap: 14 }}>
           {pendingQuotes.map((j) => {
-            const needsQuote = !j.ownerQuoted && (!j.estMin || j.estMin === 0);
+            const needsQuote = !j.ownerQuoted || !j.estMin || j.estMin === 0;
+            const isEditing = editingJobId === j.id;
+
             return (
               <div
                 key={j.id}
                 style={{
                   background: "#ffffff",
-                  border: needsQuote ? "2px solid #ea580c" : "1.5px solid #fdba74",
+                  border: needsQuote ? "2px solid #ea580c" : "2px solid #22c55e",
                   borderRadius: 14,
                   padding: "16px 18px",
-                  boxShadow: "0 4px 14px rgba(234, 88, 12, 0.08)",
+                  boxShadow: needsQuote ? "0 4px 14px rgba(234, 88, 12, 0.08)" : "0 4px 14px rgba(34, 197, 94, 0.08)",
                 }}
               >
                 <div className="row between" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
@@ -92,8 +94,8 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                     <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <span
                         style={{
-                          background: needsQuote ? "#fee2e2" : "#ffedd5",
-                          color: needsQuote ? "#b91c1c" : "#9a3412",
+                          background: needsQuote ? "#fee2e2" : "#dcfce7",
+                          color: needsQuote ? "#b91c1c" : "#15803d",
                           fontWeight: 800,
                           fontSize: "0.76rem",
                           padding: "2px 7px",
@@ -109,6 +111,11 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                       ) : (
                         <span style={{ background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.72rem", padding: "2px 8px", borderRadius: 6 }}>
                           ✓ ESTIMATE SENT {money(j.estMin)}{j.estMax !== j.estMin ? ` – ${money(j.estMax)}` : ""}
+                        </span>
+                      )}
+                      {j.customerAccepted && (
+                        <span className="badge paid" style={{ fontSize: "0.72rem", fontWeight: 800, padding: "2px 8px" }}>
+                          ✓ Customer Accepted Quote
                         </span>
                       )}
                       <b style={{ fontSize: "1.02rem", color: "#111827" }}>
@@ -150,110 +157,207 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                   <i>“{j.query}”</i>
                 </div>
 
-              {/* Direct Quote Form */}
-              <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-                <form
-                  action={async (fd) => {
-                    setBusyJobId(j.id);
-                    startTransition(async () => {
-                      await sendJobEstimate(fd);
-                      setRequests((prev) => prev.filter((item) => item.id !== j.id));
-                      setBusyJobId(null);
-                    });
-                  }}
-                  className="row"
-                  style={{ gap: 8, flexWrap: "wrap", alignItems: "center", flex: 1 }}
-                >
-                  <input type="hidden" name="jobId" value={j.id} />
+                {/* Step 1: When estimate price NOT sent yet OR editing price */}
+                {(needsQuote || isEditing) ? (
+                  <div style={{ background: "#fff7ed", border: "1px dashed #fdba74", borderRadius: 10, padding: 12 }}>
+                    <div className="tiny uppercase" style={{ fontWeight: 800, color: "#c2410c", marginBottom: 6 }}>
+                      {needsQuote ? "Step 1: Enter & Send Estimate Price to Customer" : "Update Estimate Price Quote"}
+                    </div>
+                    <form
+                      action={async (fd) => {
+                        setBusyJobId(j.id);
+                        startTransition(async () => {
+                          await sendJobEstimate(fd);
+                          const minVal = parseInt(fd.get("estMin")) || 0;
+                          const maxVal = parseInt(fd.get("estMax")) || minVal;
+                          const noteVal = String(fd.get("note") || "");
+                          setRequests((prev) =>
+                            prev.map((item) =>
+                              item.id === j.id
+                                ? {
+                                    ...item,
+                                    ownerQuoted: true,
+                                    estMin: Math.min(minVal, maxVal),
+                                    estMax: Math.max(minVal, maxVal),
+                                    ownerNote: noteVal,
+                                  }
+                                : item
+                            )
+                          );
+                          setEditingJobId(null);
+                          setBusyJobId(null);
+                        });
+                      }}
+                      className="row"
+                      style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}
+                    >
+                      <input type="hidden" name="jobId" value={j.id} />
 
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <span className="small" style={{ fontWeight: 700, color: "#7c2d12" }}>Quote $:</span>
-                    <input
-                      type="number"
-                      name="estMin"
-                      defaultValue={j.ownerQuoted && j.estMin > 0 ? j.estMin : ""}
-                      placeholder="Min $"
-                      required
-                      disabled={busy && busyJobId === j.id}
-                      style={{
-                        width: 90,
-                        padding: "7px 10px",
-                        fontSize: "0.88rem",
-                        borderRadius: 8,
-                        border: "1.5px solid #ea580c",
-                        background: "#fff",
-                      }}
-                      title="Estimated minimum price"
-                    />
-                    <span style={{ color: "#9a3412", fontWeight: 700 }}>–</span>
-                    <input
-                      type="number"
-                      name="estMax"
-                      defaultValue={j.ownerQuoted && j.estMax > 0 ? j.estMax : ""}
-                      placeholder="Max $"
-                      disabled={busy && busyJobId === j.id}
-                      style={{
-                        width: 90,
-                        padding: "7px 10px",
-                        fontSize: "0.88rem",
-                        borderRadius: 8,
-                        border: "1.5px solid #cbd5e1",
-                        background: "#fff",
-                      }}
-                      title="Estimated maximum price"
-                    />
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span className="small" style={{ fontWeight: 700, color: "#7c2d12" }}>Price $:</span>
+                        <input
+                          type="number"
+                          name="estMin"
+                          defaultValue={j.ownerQuoted && j.estMin > 0 ? j.estMin : ""}
+                          placeholder="Min $"
+                          required
+                          disabled={busy && busyJobId === j.id}
+                          style={{
+                            width: 90,
+                            padding: "7px 10px",
+                            fontSize: "0.88rem",
+                            borderRadius: 8,
+                            border: "1.5px solid #ea580c",
+                            background: "#fff",
+                          }}
+                          title="Estimated minimum price"
+                        />
+                        <span style={{ color: "#9a3412", fontWeight: 700 }}>–</span>
+                        <input
+                          type="number"
+                          name="estMax"
+                          defaultValue={j.ownerQuoted && j.estMax > 0 ? j.estMax : ""}
+                          placeholder="Max $"
+                          disabled={busy && busyJobId === j.id}
+                          style={{
+                            width: 90,
+                            padding: "7px 10px",
+                            fontSize: "0.88rem",
+                            borderRadius: 8,
+                            border: "1.5px solid #cbd5e1",
+                            background: "#fff",
+                          }}
+                          title="Estimated maximum price"
+                        />
+                      </div>
+
+                      <input
+                        name="note"
+                        placeholder="Note with estimate (e.g. Includes inspection & parts. Ready in 2 hours)"
+                        defaultValue={j.ownerNote || (j.ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service.")}
+                        disabled={busy && busyJobId === j.id}
+                        style={{
+                          flex: 1,
+                          minWidth: 200,
+                          padding: "7px 10px",
+                          fontSize: "0.85rem",
+                          borderRadius: 8,
+                          border: "1px solid #cbd5e1",
+                        }}
+                      />
+
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-sm"
+                        disabled={busy && busyJobId === j.id}
+                        style={{ fontWeight: 800, padding: "8px 14px", gap: 6 }}
+                      >
+                        {busy && busyJobId === j.id ? "Sending…" : "Send Estimate to Customer 🔔"}
+                      </button>
+
+                      {isEditing && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setEditingJobId(null)}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </form>
                   </div>
-
-                  <input
-                    name="note"
-                    placeholder="Small note with estimate (e.g. Includes inspection & parts. Ready in 2 hours)"
-                    defaultValue={j.ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service."}
-                    disabled={busy && busyJobId === j.id}
+                ) : (
+                  /* Step 2: Once estimate price is sent -> Owner gets button for Book or Decline */
+                  <div
                     style={{
-                      flex: 1,
-                      minWidth: 200,
-                      padding: "7px 10px",
-                      fontSize: "0.85rem",
-                      borderRadius: 8,
-                      border: "1px solid #cbd5e1",
+                      background: "linear-gradient(135deg, #f0fdf4, #eafaf1)",
+                      border: "1.5px solid #86efac",
+                      borderRadius: 10,
+                      padding: "12px 14px",
                     }}
-                  />
-
-                  <button
-                    type="submit"
-                    className="btn btn-primary btn-sm"
-                    disabled={busy && busyJobId === j.id}
-                    style={{ fontWeight: 800, padding: "8px 14px", gap: 6 }}
                   >
-                    {busy && busyJobId === j.id ? "Sending…" : "Send Estimate to Customer 🔔"}
-                  </button>
-                </form>
+                    <div className="row between" style={{ alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <span style={{ fontWeight: 800, color: "#166534", fontSize: "0.95rem" }}>
+                          ✓ Estimate Price Sent: {money(j.estMin)}{j.estMax !== j.estMin ? ` – ${money(j.estMax)}` : ""}
+                        </span>
+                        {j.ownerNote && (
+                          <span className="small muted" style={{ marginLeft: 8, color: "#15803d" }}>
+                            · Note: “{j.ownerNote}”
+                          </span>
+                        )}
+                      </div>
 
-                {/* Direct Accept Vehicle Action */}
-                <form
-                  action={async (fd) => {
-                    setBusyJobId(j.id);
-                    startTransition(async () => {
-                      await acceptJobRequest(fd);
-                      setRequests((prev) => prev.filter((item) => item.id !== j.id));
-                      setBusyJobId(null);
-                    });
-                  }}
-                >
-                  <input type="hidden" name="jobId" value={j.id} />
-                  <button
-                    type="submit"
-                    className="btn btn-dark btn-sm"
-                    disabled={busy && busyJobId === j.id}
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    Accept Vehicle 🔧
-                  </button>
-                </form>
+                      <button
+                        type="button"
+                        onClick={() => setEditingJobId(j.id)}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: "0.75rem", padding: "2px 8px", color: "#15803d" }}
+                      >
+                        ✏️ Edit Price
+                      </button>
+                    </div>
+
+                    <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <div className="small" style={{ color: "#166534", fontWeight: 600 }}>
+                        {j.customerAccepted
+                          ? "✓ Customer accepted the estimate. Click Book to start the repair workflow!"
+                          : "Customer has received the estimate quote. You can now Book the service to start repair or Decline the request:"}
+                      </div>
+
+                      {/* The required Book and Decline Buttons */}
+                      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {/* Book Button */}
+                        <form
+                          action={async (fd) => {
+                            setBusyJobId(j.id);
+                            startTransition(async () => {
+                              await ownerBookJob(fd);
+                              setRequests((prev) => prev.filter((item) => item.id !== j.id));
+                              setBusyJobId(null);
+                            });
+                          }}
+                        >
+                          <input type="hidden" name="jobId" value={j.id} />
+                          <button
+                            type="submit"
+                            className="btn btn-primary btn-sm"
+                            disabled={busy && busyJobId === j.id}
+                            style={{ fontWeight: 800, padding: "8px 16px", gap: 6, fontSize: "0.9rem" }}
+                          >
+                            {busy && busyJobId === j.id ? "Booking…" : "✓ Book Service (Start Repair 🔧)"}
+                          </button>
+                        </form>
+
+                        {/* Decline Button */}
+                        <form
+                          action={async (fd) => {
+                            if (!window.confirm(`Are you sure you want to decline request ${j.code}?`)) return;
+                            setBusyJobId(j.id);
+                            startTransition(async () => {
+                              await ownerDeclineJob(fd);
+                              setRequests((prev) => prev.filter((item) => item.id !== j.id));
+                              setBusyJobId(null);
+                            });
+                          }}
+                        >
+                          <input type="hidden" name="jobId" value={j.id} />
+                          <button
+                            type="submit"
+                            className="btn btn-ghost btn-sm"
+                            disabled={busy && busyJobId === j.id}
+                            style={{ color: "#dc2626", borderColor: "#fca5a5", fontWeight: 700, padding: "8px 14px" }}
+                          >
+                            {busy && busyJobId === j.id ? "Declining…" : "✕ Decline"}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
       </div>
     </div>

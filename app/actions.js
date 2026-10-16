@@ -380,16 +380,18 @@ export async function updateJobStatus(fd) {
   revalidatePath("/dashboard");
 }
 
-export async function acceptJobRequest(fd) {
+export async function ownerBookJob(fd) {
   await requireStaff();
   const id = int(fd.get("jobId"));
+  const rawNote = s(fd.get("note"));
+  const note = rawNote || "Service booked & confirmed by garage owner. Repair process started.";
   const job = await db.job.findUnique({ where: { id } });
-  if (!job) return;
+  if (!job) return { error: "Job not found" };
   await db.job.update({
     where: { id },
     data: {
       status: "REPAIRING",
-      logs: { create: { status: "REPAIRING", note: "Vehicle accepted at garage. Repair started." } },
+      logs: { create: { status: "REPAIRING", note } },
     },
   });
   revalidatePath("/owner");
@@ -397,6 +399,33 @@ export async function acceptJobRequest(fd) {
   revalidatePath(`/owner/jobs/${id}`);
   revalidatePath(`/track/${id}`);
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function ownerDeclineJob(fd) {
+  await requireStaff();
+  const id = int(fd.get("jobId"));
+  const rawReason = s(fd.get("reason"));
+  const reason = rawReason || "Estimate / service request declined by garage owner.";
+  const job = await db.job.findUnique({ where: { id } });
+  if (!job) return { error: "Job not found" };
+  await db.job.update({
+    where: { id },
+    data: {
+      status: "CANCELLED",
+      logs: { create: { status: "CANCELLED", note: reason } },
+    },
+  });
+  revalidatePath("/owner");
+  revalidatePath("/owner/jobs");
+  revalidatePath(`/owner/jobs/${id}`);
+  revalidatePath(`/track/${id}`);
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+export async function acceptJobRequest(fd) {
+  return await ownerBookJob(fd);
 }
 
 export async function sendJobEstimate(fd) {
@@ -936,6 +965,9 @@ export async function getOwnerPendingEstimates() {
   });
   return jobs.map((j) => {
     const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+    const customerAccepted = j.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
+    const estimateLog = j.logs?.find((l) => l.note?.startsWith("Estimate sent:"));
+    const ownerNote = estimateLog?.note ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "") : "";
     return {
       id: j.id,
       code: j.code,
@@ -943,6 +975,8 @@ export async function getOwnerPendingEstimates() {
       estMin: ownerQuoted ? j.estMin : 0,
       estMax: ownerQuoted ? j.estMax : 0,
       ownerQuoted: !!ownerQuoted,
+      ownerNote,
+      customerAccepted: !!customerAccepted,
       status: j.status,
       createdAt: j.createdAt.toISOString(),
       vehicle: {

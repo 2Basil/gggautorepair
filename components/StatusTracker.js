@@ -402,21 +402,74 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
               )}
             </div>
 
-            {/* 3. Final Bill if generated */}
             {data.bill ? (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-                <div className="row between" style={{ alignItems: "baseline" }}>
-                  <span className="muted">Final total</span>
+                <div className="row between" style={{ alignItems: "baseline", marginBottom: 12 }}>
+                  <span className="muted">Final Bill Total</span>
                   <b style={{ fontSize: "1.4rem", color: "var(--ink)" }}>{money(data.bill.total)}</b>
                 </div>
-                <div className="row between" style={{ marginTop: 8, alignItems: "center" }}>
-                  <span className={`badge ${data.bill.paid ? "paid" : "unpaid"}`}>{data.bill.paid ? "Paid" : "Pay at garage"}</span>
-                  <Link href={`/bills/${data.bill.id}`} className="btn btn-primary btn-sm">View &amp; Pay online →</Link>
-                </div>
-                {!data.bill.paid && (
-                  <p className="tiny muted" style={{ marginTop: 8 }}>
-                    You can pay online on the bill page using any credit/debit card.
-                  </p>
+
+                {data.bill.paid ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      background: "#f0fdf4",
+                      border: "1.5px solid #86efac",
+                      borderRadius: 12,
+                      padding: "12px 16px",
+                    }}
+                  >
+                    <span style={{ fontSize: "1.4rem" }}>✅</span>
+                    <div>
+                      <div style={{ fontWeight: 800, color: "#15803d", fontSize: "0.92rem" }}>
+                        Paid in Full — Thank you!
+                      </div>
+                      <div className="tiny muted" style={{ marginTop: 2 }}>
+                        All services have been settled. Your receipt is available online.
+                      </div>
+                    </div>
+                    <Link href={`/bills/${data.bill.id}`} className="btn btn-ghost btn-sm" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
+                      View receipt
+                    </Link>
+                  </div>
+                ) : (
+                  <div>
+                    {/* Prominent Pay Now button */}
+                    <Link
+                      href={`/bills/${data.bill.id}#payment`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 10,
+                        padding: "15px 22px",
+                        background: "linear-gradient(135deg, #1d4ed8, #2563eb)",
+                        color: "#fff",
+                        borderRadius: 14,
+                        fontWeight: 900,
+                        fontSize: "1.05rem",
+                        textDecoration: "none",
+                        boxShadow: "0 6px 22px rgba(37,99,235,0.38)",
+                        marginBottom: 10,
+                        transition: "opacity 0.15s",
+                        width: "100%",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      🔒 Pay {money(data.bill.total)} Now — Online
+                    </Link>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
+                      <span className={`badge unpaid`} style={{ fontSize: "0.78rem" }}>Payment Due</span>
+                      <Link href={`/bills/${data.bill.id}`} className="btn-link small muted">
+                        View full invoice →
+                      </Link>
+                    </div>
+                    <p className="tiny muted" style={{ marginTop: 8, textAlign: "center" }}>
+                      Pay instantly via Credit/Debit Card, Zelle, PayPal, Cash App, and more.
+                    </p>
+                  </div>
                 )}
               </div>
             ) : (

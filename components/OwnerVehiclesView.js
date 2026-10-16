@@ -5,7 +5,7 @@ import Link from "next/link";
 import { fmtDate, money, prettyReg } from "@/lib/format";
 import { STATUS_LABEL } from "@/lib/config";
 import ContactButtons from "@/components/ContactButtons";
-import { acceptJobRequest, sendJobEstimate } from "@/app/actions";
+import { acceptJobRequest, sendJobEstimate, ownerBookJob, ownerDeclineJob } from "@/app/actions";
 
 export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [] }) {
   const [tab, setTab] = useState("all"); // "all" | "requested" | "accepted"
@@ -230,50 +230,107 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                   ) : isRequested ? (
                     (() => {
                       const ownerQuoted = (j.logs || []).some((l) => l.note?.startsWith("Estimate sent:"));
+                      const hasQuote = ownerQuoted && j.estMin > 0;
                       return (
-                        <>
-                          {/* One-click Accept & Start Repair */}
-                          <form action={acceptJobRequest}>
-                            <input type="hidden" name="jobId" value={j.id} />
-                            <button className="btn btn-ghost btn-sm" style={{ fontWeight: 600 }}>
-                              Accept Vehicle 🔧
-                            </button>
-                          </form>
+                        <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {hasQuote ? (
+                            <>
+                              {/* After estimate is sent: Owner gets Book or Decline buttons to start the process */}
+                              <form action={ownerBookJob}>
+                                <input type="hidden" name="jobId" value={j.id} />
+                                <button
+                                  type="submit"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ fontWeight: 800, padding: "7px 14px" }}
+                                  title="Book service and start repair process"
+                                >
+                                  ✓ Book Service 🔧
+                                </button>
+                              </form>
 
-                          {/* Quick Send Estimate Form (manual owner quote) */}
-                          <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
-                            <input type="hidden" name="jobId" value={j.id} />
-                            <input
-                              type="number"
-                              name="estMin"
-                              defaultValue={ownerQuoted && j.estMin > 0 ? j.estMin : ""}
-                              placeholder="Min $"
-                              style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem", border: !ownerQuoted ? "1.5px solid var(--accent)" : "1px solid var(--line)" }}
-                              title="Minimum estimate"
-                              required
-                            />
-                            <input
-                              type="number"
-                              name="estMax"
-                              defaultValue={ownerQuoted && j.estMax > 0 ? j.estMax : ""}
-                              placeholder="Max $"
-                              style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem" }}
-                              title="Maximum estimate"
-                            />
-                            <input
-                              name="note"
-                              defaultValue={ownerQuoted ? "" : "Estimate quoted. Please confirm to book your service."}
-                              placeholder="Note with estimate"
-                              style={{ width: 140, padding: "6px 8px", fontSize: "0.82rem" }}
-                            />
-                            <button
-                              className={`btn btn-sm ${!ownerQuoted ? "btn-primary" : "btn-dark"}`}
-                              title="Send manual price estimate to customer"
-                            >
-                              {!ownerQuoted ? "Quote Price 🔔" : "Update Est 🔔"}
-                            </button>
-                          </form>
-                        </>
+                              <form action={ownerDeclineJob}>
+                                <input type="hidden" name="jobId" value={j.id} />
+                                <button
+                                  type="submit"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ color: "#dc2626", borderColor: "#fca5a5", fontWeight: 700 }}
+                                  title="Decline this estimate / service request"
+                                >
+                                  ✕ Decline
+                                </button>
+                              </form>
+
+                              {/* Quick update option */}
+                              <details style={{ display: "inline-block" }}>
+                                <summary className="btn btn-ghost btn-sm" style={{ fontSize: "0.78rem", cursor: "pointer", padding: "5px 10px" }}>
+                                  ✏️ Edit Est
+                                </summary>
+                                <div style={{ position: "absolute", zIndex: 20, background: "#fff", border: "1.5px solid var(--line)", padding: 10, borderRadius: 10, boxShadow: "0 6px 18px rgba(0,0,0,0.12)", marginTop: 6 }}>
+                                  <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
+                                    <input type="hidden" name="jobId" value={j.id} />
+                                    <input
+                                      type="number"
+                                      name="estMin"
+                                      defaultValue={j.estMin}
+                                      placeholder="Min $"
+                                      style={{ width: 80, padding: "5px 8px", fontSize: "0.85rem" }}
+                                      required
+                                    />
+                                    <input
+                                      type="number"
+                                      name="estMax"
+                                      defaultValue={j.estMax}
+                                      placeholder="Max $"
+                                      style={{ width: 80, padding: "5px 8px", fontSize: "0.85rem" }}
+                                    />
+                                    <input
+                                      name="note"
+                                      placeholder="Note"
+                                      style={{ width: 120, padding: "5px 8px", fontSize: "0.82rem" }}
+                                    />
+                                    <button type="submit" className="btn btn-dark btn-sm">Save</button>
+                                  </form>
+                                </div>
+                              </details>
+                            </>
+                          ) : (
+                            /* Before estimate is sent: Only show form to quote estimate price */
+                            <form action={sendJobEstimate} className="row" style={{ gap: 6, alignItems: "center" }}>
+                              <input type="hidden" name="jobId" value={j.id} />
+                              <input
+                                type="number"
+                                name="estMin"
+                                defaultValue=""
+                                placeholder="Min $"
+                                style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem", border: "1.5px solid var(--accent)" }}
+                                title="Minimum estimate"
+                                required
+                              />
+                              <input
+                                type="number"
+                                name="estMax"
+                                defaultValue=""
+                                placeholder="Max $"
+                                style={{ width: 80, padding: "6px 8px", fontSize: "0.85rem" }}
+                                title="Maximum estimate"
+                              />
+                              <input
+                                name="note"
+                                defaultValue="Estimate quoted. Please confirm to book your service."
+                                placeholder="Note with estimate"
+                                style={{ width: 140, padding: "6px 8px", fontSize: "0.82rem" }}
+                              />
+                              <button
+                                type="submit"
+                                className="btn btn-sm btn-primary"
+                                title="Send manual price estimate to customer"
+                                style={{ fontWeight: 800 }}
+                              >
+                                Quote Price 🔔
+                              </button>
+                            </form>
+                          )}
+                        </div>
                       );
                     })()
                   ) : (
