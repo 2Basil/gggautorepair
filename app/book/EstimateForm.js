@@ -120,19 +120,19 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
 
         <div
           style={{
-            background: "rgba(200, 69, 43, 0.05)",
-            border: "1px dashed rgba(200, 69, 43, 0.3)",
-            borderRadius: 12,
-            padding: "12px 14px",
-            margin: "8px 0 16px",
-            fontSize: "0.85rem",
-            color: "#4a3b32",
+            background: "linear-gradient(135deg, rgba(200, 69, 43, 0.08), rgba(245, 158, 11, 0.08))",
+            border: "1.5px solid rgba(200, 69, 43, 0.35)",
+            borderRadius: 14,
+            padding: "14px 16px",
+            margin: "10px 0 16px",
+            fontSize: "0.88rem",
+            color: "#3b2a22",
           }}
         >
-          <div style={{ fontWeight: 700, color: "var(--accent)", marginBottom: 2 }}>
-            📋 Manual Garage Owner Estimate
+          <div style={{ fontWeight: 800, color: "var(--accent)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚡ Real-Time Garage Owner Price Quote</span>
           </div>
-          No automatically generated prices. When you click <b>Estimate My Bill</b>, our garage owner will personally review your vehicle issue and send you an estimated price quote with a note. You can then review the price and choose to book the service or decline.
+          Select your vehicle, choose or describe the issue above, and click <b>Send Live Estimate Request</b>. This immediately alerts the garage owner on their portal with an urgent flashing notification to review your issue and send you a custom price quote.
         </div>
 
         {error && <div className="alert err">{error}</div>}
@@ -141,9 +141,18 @@ export default function EstimateForm({ vehicles, initialVehicle, initialQuery, o
           type="submit"
           className="btn btn-primary btn-block"
           disabled={pending || query.trim().length < 3}
-          style={{ fontSize: "1.05rem", padding: "14px 20px" }}
+          style={{
+            fontSize: "1.08rem",
+            fontWeight: 800,
+            padding: "16px 22px",
+            background: "linear-gradient(135deg, #c8452b, #ea580c)",
+            boxShadow: "0 6px 20px rgba(200,69,43,0.35)",
+            border: "none",
+            borderRadius: 14,
+            cursor: pending || query.trim().length < 3 ? "not-allowed" : "pointer",
+          }}
         >
-          {pending ? "Sending Estimate Request to Owner…" : "Estimate My Bill 🔔"}
+          {pending ? "⏳ Dispatching Live Request to Garage Owner…" : "🔔 Send Live Estimate Request to Owner"}
         </button>
       </form>
     </div>

@@ -11,18 +11,47 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
   const [editingJobId, setEditingJobId] = useState(null);
   const [busy, startTransition] = useTransition();
 
-  // Poll for incoming customer estimate requests every 5 seconds
+  // Play a soft notification chime on new estimate requests
+  function playAlertChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime); // E5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.45);
+    } catch {
+      // Audio not permitted or not supported
+    }
+  }
+
+  // Poll for incoming customer estimate requests every 3 seconds for instant real-time sync
   useEffect(() => {
+    let lastUnquoted = requests.filter((r) => !r.ownerQuoted || !r.estMin || r.estMin === 0).length;
+
     const timer = setInterval(async () => {
       try {
         const next = await getOwnerPendingEstimates();
         if (next) {
+          const newUnquoted = next.filter((r) => !r.ownerQuoted || !r.estMin || r.estMin === 0).length;
+          if (newUnquoted > lastUnquoted) {
+            playAlertChime();
+          }
+          lastUnquoted = newUnquoted;
           setRequests(next);
         }
-      } catch (err) {
+      } catch {
         // silent
       }
-    }, 5000);
+    }, 3000);
 
     return () => clearInterval(timer);
   }, []);
