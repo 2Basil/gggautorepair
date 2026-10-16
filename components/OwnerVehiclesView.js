@@ -235,18 +235,9 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                         <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           {hasQuote ? (
                             <>
-                              {/* After estimate is sent: Owner gets Book or Decline buttons to start the process */}
-                              <form action={ownerBookJob}>
-                                <input type="hidden" name="jobId" value={j.id} />
-                                <button
-                                  type="submit"
-                                  className="btn btn-primary btn-sm"
-                                  style={{ fontWeight: 800, padding: "7px 14px" }}
-                                  title="Book service and start repair process"
-                                >
-                                  ✓ Book Service 🔧
-                                </button>
-                              </form>
+                              <span style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 700 }}>
+                                ✓ Estimate Sent
+                              </span>
 
                               <form action={ownerDeclineJob}>
                                 <input type="hidden" name="jobId" value={j.id} />

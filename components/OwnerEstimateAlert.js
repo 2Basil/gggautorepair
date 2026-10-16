@@ -330,33 +330,34 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
                     <div className="row between" style={{ alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                       <div className="small" style={{ color: "#166534", fontWeight: 600 }}>
                         {j.customerAccepted
-                          ? "✓ Customer accepted the estimate. Click Book to start the repair workflow!"
-                          : "Customer has received the estimate quote. You can now Book the service to start repair or Decline the request:"}
+                          ? "✓ Customer accepted your estimate! You can now start the repair workflow."
+                          : "✓ Estimate quote sent to customer. Awaiting customer confirmation/booking."}
                       </div>
 
-                      {/* The required Book and Decline Buttons */}
                       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        {/* Book Button */}
-                        <form
-                          action={async (fd) => {
-                            setBusyJobId(j.id);
-                            startTransition(async () => {
-                              await ownerBookJob(fd);
-                              setRequests((prev) => prev.filter((item) => item.id !== j.id));
-                              setBusyJobId(null);
-                            });
-                          }}
-                        >
-                          <input type="hidden" name="jobId" value={j.id} />
-                          <button
-                            type="submit"
-                            className="btn btn-primary btn-sm"
-                            disabled={busy && busyJobId === j.id}
-                            style={{ fontWeight: 800, padding: "8px 16px", gap: 6, fontSize: "0.9rem" }}
+                        {/* Only show Start Repair if customer has accepted */}
+                        {j.customerAccepted && (
+                          <form
+                            action={async (fd) => {
+                              setBusyJobId(j.id);
+                              startTransition(async () => {
+                                await ownerBookJob(fd);
+                                setRequests((prev) => prev.filter((item) => item.id !== j.id));
+                                setBusyJobId(null);
+                              });
+                            }}
                           >
-                            {busy && busyJobId === j.id ? "Booking…" : "✓ Book Service (Start Repair 🔧)"}
-                          </button>
-                        </form>
+                            <input type="hidden" name="jobId" value={j.id} />
+                            <button
+                              type="submit"
+                              className="btn btn-primary btn-sm"
+                              disabled={busy && busyJobId === j.id}
+                              style={{ fontWeight: 800, padding: "8px 16px", gap: 6, fontSize: "0.9rem" }}
+                            >
+                              {busy && busyJobId === j.id ? "Starting…" : "✓ Start Repair 🔧"}
+                            </button>
+                          </form>
+                        )}
 
                         {/* Decline Button */}
                         <form

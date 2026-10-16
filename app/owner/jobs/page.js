@@ -121,12 +121,9 @@ export default async function OwnerJobs({ searchParams }) {
                         const hasQuote = ownerQuoted && j.estMin > 0;
                         return hasQuote ? (
                           <>
-                            <form action={ownerBookJob} style={{ display: "inline" }}>
-                              <input type="hidden" name="jobId" value={j.id} />
-                              <button type="submit" className="btn btn-primary btn-sm" title="Book service and start repair process">
-                                ✓ Book
-                              </button>
-                            </form>{" "}
+                            <span style={{ fontSize: "0.82rem", color: "#166534", fontWeight: 700, marginRight: 6 }}>
+                              ✓ Est Sent
+                            </span>
                             <form action={ownerDeclineJob} style={{ display: "inline" }}>
                               <input type="hidden" name="jobId" value={j.id} />
                               <button type="submit" className="btn btn-ghost btn-sm" style={{ color: "#dc2626", borderColor: "#fca5a5" }} title="Decline request">
