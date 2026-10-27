@@ -26,6 +26,7 @@ export default function manifest() {
       "auto"
     ],
     prefer_related_applications: false,
+    related_applications: [],
     icons: [
       {
         src: "/icons/icon-192.png",
