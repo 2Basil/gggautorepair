@@ -35,17 +35,14 @@ export default async function BillPage({ params, searchParams }) {
     if (stripeKey && sp.session_id) {
       try {
         const Stripe = (await import("stripe")).default;
-        const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
+        const stripe = new Stripe(stripeKey, { apiVersion: "2025-04-30" });
         const session = await stripe.checkout.sessions.retrieve(sp.session_id);
-        if (session.payment_status === "paid") {
+        if (session.payment_status === "paid" && String(session.metadata?.billId) === String(bill.id)) {
           verified = true;
         }
       } catch (err) {
         console.error("Stripe session verification error:", err);
       }
-    } else {
-      // Dev / sandbox confirmation
-      verified = true;
     }
 
     if (verified) {

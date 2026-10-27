@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 export const runtime = "nodejs";
 
 const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" })
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-04-30" })
   : null;
 
 export async function POST(req) {
@@ -22,9 +22,12 @@ export async function POST(req) {
 
   try {
     if (webhookSecret && sig) {
+      // PRODUCTION: verify the Stripe signature — prevents forged webhook events
       event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
     } else {
-      // Dev fallback — parse without verification
+      // DEV ONLY fallback: parse without signature verification.
+      // Set STRIPE_WEBHOOK_SECRET in .env to enable signature checking.
+      console.warn("[stripe-webhook] No STRIPE_WEBHOOK_SECRET set — skipping signature verification (dev mode only).");
       event = JSON.parse(body);
     }
   } catch (err) {

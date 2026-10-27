@@ -37,7 +37,7 @@ export default async function Employees({ searchParams }) {
                 <td>
                   <form action={resetEmployeePassword} className="row" style={{ gap: 6 }}>
                     <input type="hidden" name="id" value={e.id} />
-                    <input name="password" type="text" minLength={6} placeholder="New password" required style={{ maxWidth: 170 }} />
+                    <input name="password" type="password" minLength={6} placeholder="New password" required style={{ maxWidth: 170 }} autoComplete="new-password" />
                     <button className="btn btn-ghost btn-sm">Set</button>
                   </form>
                 </td>

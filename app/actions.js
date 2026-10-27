@@ -14,6 +14,7 @@ import { learnFromBill, loadSamples } from "@/lib/learn";
 import { normReg, billTotals, money } from "@/lib/format";
 import { STATUS_KEYS, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
 import Stripe from "stripe";
+import { baseUrl } from "@/lib/baseUrl";
 
 const s = (v) => String(v ?? "").trim();
 const int = (v, d = 0) => {
@@ -89,7 +90,7 @@ export async function registerCustomer(_prev, fd) {
       userCode: await uniqueUserCode(name, phone),
       address: s(f.address) || null,
       city: s(f.city) || null,
-      passwordHash: await bcrypt.hash(password, 10),
+      passwordHash: await bcrypt.hash(password, 12),
       vehicles: { create: vehicle },
     },
   });
@@ -130,7 +131,7 @@ export async function changePassword(_prev, fd) {
   if (next.length < 8) return { error: "The new password must be at least 8 characters." };
   if (next !== again) return { error: "The new passwords do not match." };
   if (next === cur) return { error: "Choose a password different from the current one." };
-  await db.user.update({ where: { id: me.id }, data: { passwordHash: await bcrypt.hash(next, 10) } });
+  await db.user.update({ where: { id: me.id }, data: { passwordHash: await bcrypt.hash(next, 12) } });
   return { ok: "Password changed. Use the new password next time you log in." };
 }
 
@@ -167,7 +168,7 @@ export async function resetPassword(email, code, password, confirm) {
   if (verified?.error) return verified;
   const user = await db.user.findUnique({ where: { email: e } });
   if (!user) return { error: "No account found with that email address." };
-  await db.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(pw, 10) } });
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(pw, 12) } });
   return { ok: "Your password has been reset. You can now log in." };
 }
 
@@ -183,7 +184,7 @@ export async function addEmployee(_prev, fd) {
   if (password.length < 6) return { error: "Password must be at least 6 characters." };
   if (await db.user.findUnique({ where: { empId } })) return { error: "That Employee ID is already taken." };
   await db.user.create({
-    data: { name, empId, email: `${empId}@staff.local`, phone: "-", passwordHash: await bcrypt.hash(password, 10), role: "EMPLOYEE" },
+    data: { name, empId, email: `${empId}@staff.local`, phone: "-", passwordHash: await bcrypt.hash(password, 12), role: "EMPLOYEE" },
   });
   revalidatePath("/owner/employees");
   return { ok: `Added ${name}. They log in at /login with ID "${empId}" and the password you set.` };
@@ -195,7 +196,7 @@ export async function resetEmployeePassword(fd) {
   const password = String(fd.get("password") || "");
   const emp = await db.user.findUnique({ where: { id } });
   if (!emp || emp.role !== "EMPLOYEE" || password.length < 6) redirect("/owner/employees?error=password");
-  await db.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
+  await db.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(password, 12) } });
   redirect("/owner/employees?reset=1");
 }
 
@@ -522,7 +523,7 @@ export async function rescheduleJob(_prev, fd) {
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
-  return new Stripe(key, { apiVersion: "2024-06-20" });
+  return new Stripe(key, { apiVersion: "2025-04-30" });
 }
 
 export async function createStripeCheckout(billId) {
@@ -532,9 +533,23 @@ export async function createStripeCheckout(billId) {
   if (bill.paid) return { error: "This bill is already paid." };
   const stripe = getStripe();
   if (!stripe) {
-    return { testMode: true, message: "Stripe test sandbox enabled." };
+    // No STRIPE_SECRET_KEY configured — inform the UI so it falls back to manual proof submission
+    return { noStripe: true, message: "Card payments via Stripe are not yet configured by the garage owner." };
   }
-  const appUrl = process.env.APP_URL || "http://localhost:3000";
+  const appUrl = (await baseUrl()).replace(/\/$/, "");
+
+  // Build discounts: if a discount is set, create a one-time coupon for exact amount off
+  let discounts = [];
+  if (bill.discount > 0) {
+    const coupon = await stripe.coupons.create({
+      amount_off: Math.round(bill.discount * 100), // discount stored as dollars
+      currency: "usd",
+      duration: "once",
+      name: `Invoice ${bill.number} discount`,
+    });
+    discounts = [{ coupon: coupon.id }];
+  }
+
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card", "link"],
     mode: "payment",
@@ -551,7 +566,7 @@ export async function createStripeCheckout(billId) {
       },
       quantity: i.qty,
     })),
-    discounts: bill.discount > 0 ? [] : [],
+    discounts,
     success_url: `${appUrl}/bills/${bill.id}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/bills/${bill.id}?payment=cancelled`,
   });
@@ -559,11 +574,14 @@ export async function createStripeCheckout(billId) {
 }
 
 /**
- * Universal online payment settlement and verification for US Gateways
- * (Stripe, PayPal, Venmo, Cash App Pay, Apple Pay / Google Pay, and US Test Sandbox).
- * Verifies and updates bill status to PAID IN FULL automatically.
+ * Submit payment reference / proof for garage owner verification.
+ * Customer provides their transaction ID, sender name, or cash counter note.
+ * Does NOT mark the bill as paid; sets it to pending verification for the garage owner to confirm.
+ *
+ * ZERO-STORAGE PCI ENCLAVE:
+ * Absolutely NO card numbers, CVVs, or cardholder credentials are accepted or saved.
  */
-export async function verifyAndSettleBill(billId, paymentDetails = {}) {
+export async function submitPaymentProof(billId, paymentDetails = {}) {
   const user = await requireUser();
   const bill = await db.bill.findUnique({
     where: { id: int(billId) },
@@ -571,17 +589,79 @@ export async function verifyAndSettleBill(billId, paymentDetails = {}) {
   });
   if (!bill) return { error: "Bill not found." };
   if (bill.userId !== user.id && user.role !== "OWNER") return { error: "Unauthorized access to this bill." };
-  if (bill.paid) return { ok: true, alreadyPaid: true, message: "This bill is already paid and verified." };
+  if (bill.paid) return { ok: true, alreadyPaid: true, message: "This bill has already been verified and paid." };
 
-  const gateway = s(paymentDetails.gateway) || "Stripe";
-  const method = s(paymentDetails.method) || "Credit/Debit Card";
-  const last4 = s(paymentDetails.last4) || "4242";
-  const brand = s(paymentDetails.brand) || "Visa";
-  const txnRef = s(paymentDetails.txnRef) || `US-${gateway.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  // Zero-Storage Check: ensure no sensitive card data is passed
+  if (paymentDetails.cardNumber || paymentDetails.cvc || paymentDetails.cardCvc || paymentDetails.cardExpiry) {
+    return { error: "Security violation: raw card credentials cannot be processed directly." };
+  }
+
+  const gateway = s(paymentDetails.gateway) || "Online Transfer";
+  const method = s(paymentDetails.method) || "Direct Transfer";
+  const payerName = s(paymentDetails.payerName) || user.name;
+  const txnRef = s(paymentDetails.txnRef) || `REF-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+  const notes = s(paymentDetails.notes);
   const now = new Date();
 
-  const noteEntry = `[VERIFIED PAYMENT] $${bill.total} paid via ${gateway} (${method}: ${brand} ···· ${last4}) · Auth Ref: ${txnRef} · Verified: ${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
-  const updatedNotes = bill.notes ? `${bill.notes}\n${noteEntry}` : noteEntry;
+  // Masked brand/last4 if from Sandbox
+  const brand = s(paymentDetails.brand);
+  const last4 = s(paymentDetails.last4);
+  const cardToken = s(paymentDetails.token);
+
+  const cardMeta = brand && last4 ? ` (${brand} ···· ${last4})` : "";
+  const submissionEntry = `[PAYMENT_SUBMITTED] $${bill.total} via ${gateway} (${method}${cardMeta}) · Ref: ${txnRef} · By: ${payerName}${notes ? ` · Note: ${notes}` : ""}${cardToken ? ` · Token: ${cardToken.slice(0, 16)}…` : ""} · Submitted: ${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+
+  const updatedNotes = bill.notes ? `${bill.notes}\n${submissionEntry}` : submissionEntry;
+
+  await db.bill.update({
+    where: { id: bill.id },
+    data: { notes: updatedNotes },
+  });
+
+  if (bill.jobId) {
+    await db.jobLog.create({
+      data: {
+        jobId: bill.jobId,
+        status: bill.job?.status || "BOOKED",
+        note: `Payment submission of $${bill.total} received via ${method} (Ref: ${txnRef}). Awaiting garage owner verification.`,
+      },
+    });
+    revalidatePath(`/track/${bill.jobId}`);
+  }
+
+  revalidatePath(`/bills/${bill.id}`);
+  revalidatePath(`/owner/bills/${bill.id}`);
+  revalidatePath("/owner/bills");
+  revalidatePath("/bills");
+  revalidatePath("/dashboard");
+
+  return {
+    ok: true,
+    pendingVerification: true,
+    txnRef,
+    gateway,
+    method,
+    amount: bill.total,
+    submittedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Garage Owner / Staff action to verify customer payment and officially mark bill PAID IN FULL.
+ */
+export async function verifyAndConfirmPayment(fd) {
+  const staff = await requireStaff();
+  const billId = typeof fd === "object" && fd?.get ? int(fd.get("billId")) : int(fd);
+  const bill = await db.bill.findUnique({
+    where: { id: billId },
+    include: { job: true },
+  });
+  if (!bill) return { error: "Bill not found." };
+  if (bill.paid) return { ok: true, alreadyPaid: true };
+
+  const now = new Date();
+  const verifyEntry = `[VERIFIED PAYMENT] $${bill.total} payment verified and settled by garage staff (${staff.name}) · Verified: ${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+  const updatedNotes = bill.notes ? `${bill.notes}\n${verifyEntry}` : verifyEntry;
 
   await db.bill.update({
     where: { id: bill.id },
@@ -591,7 +671,6 @@ export async function verifyAndSettleBill(billId, paymentDetails = {}) {
     },
   });
 
-  // Advance associated job to DELIVERED if it was waiting for payment in ready/tested state
   if (bill.jobId) {
     const job = await db.job.findUnique({ where: { id: bill.jobId } });
     if (job) {
@@ -603,7 +682,7 @@ export async function verifyAndSettleBill(billId, paymentDetails = {}) {
           logs: {
             create: {
               status: advanceToDelivered ? "DELIVERED" : job.status,
-              note: `Online payment of $${bill.total} verified via ${gateway} (Ref: ${txnRef}). Bill marked PAID IN FULL.`,
+              note: `Payment of $${bill.total} verified and confirmed by ${staff.name}. Bill marked PAID IN FULL.`,
             },
           },
         },
@@ -617,16 +696,49 @@ export async function verifyAndSettleBill(billId, paymentDetails = {}) {
   revalidatePath("/owner/bills");
   revalidatePath("/bills");
   revalidatePath("/dashboard");
-  revalidatePath("/owner/records");
 
-  return {
-    ok: true,
-    txnRef,
-    gateway,
-    method,
-    amount: bill.total,
-    paidAt: now.toISOString(),
-  };
+  return { ok: true, paid: true };
+}
+
+/**
+ * Garage Owner action to flag or reject an unverified payment submission (e.g. invalid ref #).
+ */
+export async function rejectPaymentSubmission(fd) {
+  const staff = await requireStaff();
+  const billId = typeof fd === "object" && fd?.get ? int(fd.get("billId")) : int(fd);
+  const reason = typeof fd === "object" && fd?.get ? s(fd.get("reason")) : "Payment not found in garage receiving account. Please verify reference and resubmit.";
+  const bill = await db.bill.findUnique({ where: { id: billId } });
+  if (!bill) return { error: "Bill not found." };
+
+  const now = new Date();
+  const flagEntry = `[PAYMENT_FLAGGED] Garage staff (${staff.name}) flagged submission: ${reason} · ${now.toLocaleDateString("en-US")} ${now.toLocaleTimeString("en-US")}`;
+  const updatedNotes = bill.notes ? `${bill.notes}\n${flagEntry}` : flagEntry;
+
+  await db.bill.update({
+    where: { id: bill.id },
+    data: { notes: updatedNotes },
+  });
+
+  revalidatePath(`/bills/${bill.id}`);
+  revalidatePath(`/owner/bills/${bill.id}`);
+  revalidatePath("/owner/bills");
+  revalidatePath("/bills");
+  revalidatePath("/dashboard");
+
+  return { ok: true, flagged: true };
+}
+
+/**
+ * Wrapper for automated / verified webhook settlement (e.g. Stripe checkout).
+ * Regular customers calling this are safely routed to submitPaymentProof.
+ */
+export async function verifyAndSettleBill(billId, paymentDetails = {}) {
+  const user = await requireUser();
+  if (user.role !== "OWNER") {
+    // Non-staff customers must submit for owner verification
+    return await submitPaymentProof(billId, paymentDetails);
+  }
+  return await verifyAndConfirmPayment(billId);
 }
 
 export async function confirmReschedule(jobId, confirmedDate, note) {

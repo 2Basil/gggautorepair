@@ -18,7 +18,7 @@ export default function AddEmployee() {
       <div className="form-grid">
         <div className="field"><label htmlFor="ename">Name</label><input id="ename" name="name" required /></div>
         <div className="field"><label htmlFor="eid">Employee ID (used to log in)</label><input id="eid" name="empId" required autoCapitalize="none" placeholder="e.g. john.k" /></div>
-        <div className="field"><label htmlFor="epw">Password (6+ characters)</label><input id="epw" name="password" type="text" minLength={6} required autoComplete="off" /></div>
+        <div className="field"><label htmlFor="epw">Password (6+ characters)</label><input id="epw" name="password" type="password" minLength={6} required autoComplete="new-password" /></div>
         <div className="field" style={{ alignSelf: "end" }}><button className="btn btn-dark" disabled={pending}>{pending ? "Adding…" : "Add employee"}</button></div>
       </div>
     </form>
