@@ -2,16 +2,30 @@ import { GARAGE } from "@/lib/config";
 
 export default function manifest() {
   return {
+    id: "/?source=pwa",
     name: "ZZZ Auto Garage — Car Service & Repair",
     short_name: "ZZZ Garage",
     description: GARAGE.tagline || "Real-time car service tracking, transparent repair bills & hassle-free booking.",
     start_url: "/",
-    id: "/",
+    scope: "/",
     display: "standalone",
+    display_override: [
+      "window-controls-overlay",
+      "standalone",
+      "minimal-ui"
+    ],
     background_color: "#f7f1e3",
     theme_color: "#22262e",
-    orientation: "portrait-primary",
-    scope: "/",
+    orientation: "any",
+    lang: "en",
+    dir: "ltr",
+    categories: [
+      "utilities",
+      "business",
+      "lifestyle",
+      "auto"
+    ],
+    prefer_related_applications: false,
     icons: [
       {
         src: "/icons/icon-192.png",
@@ -32,6 +46,47 @@ export default function manifest() {
         purpose: "maskable",
       },
     ],
-    categories: ["utilities", "business", "lifestyle"],
+    shortcuts: [
+      {
+        name: "Book Service",
+        short_name: "Book",
+        description: "Book a repair or maintenance service",
+        url: "/book",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Care Plans",
+        short_name: "Plans",
+        description: "View monthly and yearly car care plans",
+        url: "/plans",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Track Status",
+        short_name: "Track",
+        description: "Live car repair progress tracking",
+        url: "/track",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
+      },
+    ],
+    screenshots: [
+      {
+        src: "/screenshots/desktop.png",
+        sizes: "1280x720",
+        type: "image/png",
+        form_factor: "wide",
+        label: "ZZZ Auto Garage Desktop Dashboard",
+      },
+      {
+        src: "/screenshots/mobile.png",
+        sizes: "750x1334",
+        type: "image/png",
+        form_factor: "narrow",
+        label: "ZZZ Auto Garage Mobile Booking App",
+      },
+    ],
+    edge_side_panel: {
+      preferred_width: 480,
+    },
   };
 }

@@ -3,6 +3,7 @@ import AmbientBG from "@/components/AmbientBG";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import InstallAppPrompt from "@/components/InstallAppPrompt";
+import RegisterServiceWorker from "@/components/RegisterServiceWorker";
 import { GARAGE } from "@/lib/config";
 
 export const viewport = {
@@ -56,6 +57,7 @@ export default function RootLayout({ children }) {
           <Footer />
         </div>
         <InstallAppPrompt />
+        <RegisterServiceWorker />
       </body>
     </html>
   );

@@ -6,7 +6,8 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { createSession, destroySession, getUser, requireOwner, requireStaff, requireUser } from "@/lib/auth";
+import { createSession, destroySession, getUser, requireOwner, requireStaff, requireUser, getOnboardingSession, destroyOnboardingSession } from "@/lib/auth";
+import crypto from "crypto";
 import { sendOtp, checkOtp, isVerified, otpChannel, normalizePhone } from "@/lib/otp";
 import { uniqueUserCode, uniqueUsername, validateUsername } from "@/lib/userCode";
 import { predict } from "@/lib/pricing";
@@ -94,6 +95,88 @@ export async function registerCustomer(_prev, fd) {
       vehicles: { create: vehicle },
     },
   });
+  await createSession(user);
+  redirect("/dashboard");
+}
+
+export async function completeGoogleOnboarding(_prev, fd) {
+  const session = await getOnboardingSession();
+  if (!session || !session.email) {
+    return { error: "Your session has expired. Please sign in with Google again." };
+  }
+
+  const f = Object.fromEntries(fd);
+  const name = s(f.name) || session.name || "Customer";
+  const email = session.email.toLowerCase().trim();
+  const phone = normalizePhone(f.phone);
+
+  if (!name) return { error: "Please enter your name." };
+  if (!phone || phone.length < 8) return { error: "Please enter a valid mobile number." };
+
+  const vehicle = readVehicle(f);
+  const ve = vehicleError(vehicle);
+  if (ve) return { error: ve, step: 2 };
+
+  // Check if another account exists with this phone
+  const phoneExists = await db.user.findFirst({ where: { phone } });
+  if (phoneExists && phoneExists.email !== email) {
+    return { error: "An account with this mobile number already exists." };
+  }
+
+  // Check if regNo already exists
+  if (await db.vehicle.findUnique({ where: { regNo: vehicle.regNo } })) {
+    return { error: "This vehicle registration number is already registered.", step: 2 };
+  }
+
+  // Determine username
+  const rawUsername = s(f.username).toLowerCase().replace(/[^a-z0-9_]/g, "");
+  const chosenUsername = rawUsername.length >= 3 ? rawUsername : null;
+  let username = chosenUsername
+    ? (await db.user.findUnique({ where: { username: chosenUsername }, select: { id: true } }) ? await uniqueUsername(name) : chosenUsername)
+    : await uniqueUsername(name);
+
+  // Generate secure random password hash for OAuth user
+  const randomPass = crypto.randomBytes(24).toString("hex");
+  const passwordHash = await bcrypt.hash(randomPass, 10);
+
+  let user = await db.user.findUnique({ where: { email } });
+  if (user) {
+    await db.vehicle.create({
+      data: {
+        ...vehicle,
+        userId: user.id,
+      },
+    });
+    if (!user.phone || user.phone !== phone) {
+      user = await db.user.update({
+        where: { id: user.id },
+        data: {
+          phone,
+          phoneVerified: true,
+          address: s(f.address) || user.address,
+          city: s(f.city) || user.city,
+        },
+      });
+    }
+  } else {
+    user = await db.user.create({
+      data: {
+        name,
+        email,
+        phone,
+        phoneVerified: true,
+        username,
+        userCode: await uniqueUserCode(name, phone),
+        address: s(f.address) || null,
+        city: s(f.city) || null,
+        passwordHash,
+        role: "CUSTOMER",
+        vehicles: { create: vehicle },
+      },
+    });
+  }
+
+  await destroyOnboardingSession();
   await createSession(user);
   redirect("/dashboard");
 }
