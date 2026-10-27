@@ -88,7 +88,13 @@ export default function HeaderClient({ user }) {
           )}
           <details className="nav-mobile">
             <summary aria-label="Menu"><Icon name="menu" size={22} /></summary>
-            <div className="nav-mobile-panel">
+            <div
+              className="nav-mobile-panel"
+              onClick={(e) => {
+                const details = e.currentTarget.closest("details");
+                if (details) details.removeAttribute("open");
+              }}
+            >
               {isOwnerPortal ? (
                 <>
                   <Link href="/">← Customer Website</Link>

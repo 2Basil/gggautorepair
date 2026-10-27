@@ -1,0 +1,37 @@
+import { GARAGE } from "@/lib/config";
+
+export default function manifest() {
+  return {
+    name: `${GARAGE.name} — Auto Care & Repair`,
+    short_name: "Pitstop",
+    description: GARAGE.tagline || "Real-time car service tracking, transparent repair bills & hassle-free booking.",
+    start_url: "/",
+    id: "/",
+    display: "standalone",
+    background_color: "#f7f1e3",
+    theme_color: "#22262e",
+    orientation: "portrait-primary",
+    scope: "/",
+    icons: [
+      {
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ],
+    categories: ["utilities", "business", "lifestyle"],
+  };
+}
