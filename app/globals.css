@@ -221,6 +221,17 @@ input[type="checkbox"] { width: auto; }
   50% { border-color: #f59e0b; box-shadow: 0 6px 25px 0 rgba(245, 158, 11, 0.4); }
 }
 
+@keyframes pwaSlideUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 25px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .notif-flash-urgent {
   background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
   border: 2.5px solid #ea580c;

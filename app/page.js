@@ -14,13 +14,30 @@ const CAT_QUERY = { Repairing: "brake noise and engine check", Washing: "full wa
 const CAT_ICON = { Repairing: "wrench", Washing: "droplet", Modification: "sparkles", Maintenance: "settings" };
 
 export default async function Home() {
-  const [services, prices, plans, user] = await Promise.all([
-    db.service.findMany({ where: { active: true }, orderBy: { id: "asc" } }),
-    db.servicePrice.findMany(),
-    db.plan.findMany({ where: { period: "MONTHLY" }, orderBy: { price: "asc" } }),
-    getUser(),
-  ]);
-  const myVehicles = user ? await db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }) : [];
+  let services = [];
+  let prices = [];
+  let plans = [];
+  let user = null;
+
+  try {
+    [services, prices, plans, user] = await Promise.all([
+      db.service.findMany({ where: { active: true }, orderBy: { id: "asc" } }),
+      db.servicePrice.findMany(),
+      db.plan.findMany({ where: { period: "MONTHLY" }, orderBy: { price: "asc" } }),
+      getUser(),
+    ]);
+  } catch (err) {
+    console.error("[Home Page] Database query fallback:", err);
+  }
+
+  let myVehicles = [];
+  try {
+    if (user) {
+      myVehicles = await db.vehicle.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+    }
+  } catch (err) {
+    console.error("[Home Page] Vehicle query fallback:", err);
+  }
   const mine = [...new Set(myVehicles.map((v) => v.type))];
   const vehicleByType = {};
   for (const v of myVehicles) if (!vehicleByType[v.type]) vehicleByType[v.type] = v.id;

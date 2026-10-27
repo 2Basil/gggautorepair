@@ -189,19 +189,6 @@ export default function InstallAppPrompt() {
           ✕
         </button>
       </div>
-
-      <style jsx global>{`
-        @keyframes pwaSlideUp {
-          from {
-            opacity: 0;
-            transform: translate(-50%, 25px);
-          }
-          to {
-            opacity: 1;
-            transform: translate(-50%, 0);
-          }
-        }
-      `}</style>
     </div>
   );
 }
