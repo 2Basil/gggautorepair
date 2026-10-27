@@ -82,22 +82,22 @@ function Generate-AppIcon {
     $format.Alignment = [System.Drawing.StringAlignment]::Center
     $format.LineAlignment = [System.Drawing.StringAlignment]::Center
 
-    # Glow / shadow behind letter P
+    # Glow / shadow behind letter Z
     $glowBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(120, 200, 69, 43))
-    $g.DrawString("P", $font, $glowBrush, [float]$center, [float]($center * 0.90 + 3), $format)
+    $g.DrawString("Z", $font, $glowBrush, [float]$center, [float]($center * 0.90 + 3), $format)
     $glowBrush.Dispose()
 
-    # Golden brass letter P
+    # Golden brass letter Z
     $goldBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 247, 241, 227))
-    $g.DrawString("P", $font, $goldBrush, [float]$center, [float]($center * 0.90), $format)
+    $g.DrawString("Z", $font, $goldBrush, [float]$center, [float]($center * 0.90), $format)
     $goldBrush.Dispose()
     $font.Dispose()
 
-    # Subtle banner "PITSTOP" at bottom of badge
-    $subFontSize = [float]($size * 0.075)
+    # Subtle banner "ZZZ GARAGE" at bottom of badge
+    $subFontSize = [float]($size * 0.065)
     $subFont = [System.Drawing.Font]::new($fontFamily, $subFontSize, [System.Drawing.FontStyle]::Bold)
     $accentBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 200, 168, 107))
-    $g.DrawString("PITSTOP", $subFont, $accentBrush, [float]$center, [float]($center * 1.34), $format)
+    $g.DrawString("ZZZ GARAGE", $subFont, $accentBrush, [float]$center, [float]($center * 1.34), $format)
     $accentBrush.Dispose()
     $subFont.Dispose()
 

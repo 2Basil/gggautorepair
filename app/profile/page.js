@@ -4,7 +4,7 @@ import UsernameForm from "./UsernameForm";
 import Icon from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "My Profile — Pitstop Garage" };
+export const metadata = { title: "My Profile — ZZZ Auto Garage" };
 
 export default async function ProfilePage() {
   const user = await requireUser("/profile");

@@ -57,7 +57,7 @@ export default function InstallAppPrompt() {
     } else {
       // Guide instructions for Android / iOS browsers
       alert(
-        "To install Pitstop on your phone:\n\n" +
+        "To install ZZZ Auto Garage on your phone:\n\n" +
           "• Android (Chrome): Tap the 3 dots (⋮) in the top right → tap 'Install app' or 'Add to Home screen'.\n" +
           "• iPhone (Safari): Tap the Share button (⎋) → tap 'Add to Home Screen'."
       );
@@ -132,7 +132,7 @@ export default function InstallAppPrompt() {
               textOverflow: "ellipsis",
             }}
           >
-            Pitstop Garage App
+            ZZZ Auto Garage App
           </div>
           <div
             style={{

@@ -2,8 +2,8 @@ import { GARAGE } from "@/lib/config";
 
 export default function manifest() {
   return {
-    name: `${GARAGE.name} — Auto Care & Repair`,
-    short_name: "Pitstop",
+    name: "ZZZ Auto Garage — Car Service & Repair",
+    short_name: "ZZZ Garage",
     description: GARAGE.tagline || "Real-time car service tracking, transparent repair bills & hassle-free booking.",
     start_url: "/",
     id: "/",

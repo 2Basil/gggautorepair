@@ -1,7 +1,7 @@
 import ForgotPasswordForm from "./ForgotPasswordForm";
 
 export const metadata = {
-  title: "Forgot Password — ZZZ Auto Repair",
+  title: "Forgot Password — ZZZ Auto Garage",
   description: "Reset your password by verifying your email address.",
 };
 
