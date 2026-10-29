@@ -33,11 +33,12 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
     }
   }
 
-  // Poll for incoming customer estimate requests every 3 seconds for instant real-time sync
+  // Poll for incoming customer estimate requests (every 12s, only while this tab is visible)
   useEffect(() => {
     let lastUnquoted = requests.filter((r) => !r.ownerQuoted || !r.estMin || r.estMin === 0).length;
 
     const timer = setInterval(async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       try {
         const next = await getOwnerPendingEstimates();
         if (next) {
@@ -51,7 +52,7 @@ export default function OwnerEstimateAlert({ initialRequests = [] }) {
       } catch {
         // silent
       }
-    }, 3000);
+    }, 12000);
 
     return () => clearInterval(timer);
   }, []);

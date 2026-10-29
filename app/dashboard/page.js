@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { estimateState } from "@/lib/estimateState";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { VEHICLE_TYPES, STATUS_LABEL } from "@/lib/config";
@@ -164,7 +165,7 @@ export default async function Dashboard({ searchParams }) {
 
       {/* Flashing Notification for Service Requests with Estimates */}
       {estimateJobs.map((j) => {
-        const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+        const ownerQuoted = estimateState(j).quoted;
         const hasEstimate = ownerQuoted && (j.estMin > 0 || j.estMax > 0);
         return (
           <div

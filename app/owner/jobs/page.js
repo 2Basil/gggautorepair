@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { estimateState } from "@/lib/estimateState";
 import { db } from "@/lib/db";
 import { STATUS_LABEL, STATUS_KEYS } from "@/lib/config";
 import { fmtDate, money, prettyReg } from "@/lib/format";
+import Pager from "@/components/Pager";
 import ContactButtons from "@/components/ContactButtons";
 import { ownerBookJob, ownerDeclineJob } from "@/app/actions";
 
@@ -10,6 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function OwnerJobs({ searchParams }) {
   const sp = await searchParams;
   const status = STATUS_KEYS.includes(sp.status) ? sp.status : "";
+  const PAGE = 25;
+  const page = Math.max(1, parseInt(sp.page, 10) || 1);
+  const totalCount = await db.job.count({ where: status ? { status } : {} });
   const jobs = await db.job.findMany({
     where: status ? { status } : {},
     include: {
@@ -19,7 +24,8 @@ export default async function OwnerJobs({ searchParams }) {
       bills: { select: { id: true, paid: true, total: true }, orderBy: { id: "desc" } },
     },
     orderBy: { createdAt: "desc" },
-    take: 100,
+    skip: (page - 1) * PAGE,
+    take: PAGE,
   });
 
   return (
@@ -87,7 +93,7 @@ export default async function OwnerJobs({ searchParams }) {
                         Due {money(latestBill.total)}
                       </span>
                     ) : (() => {
-                      const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+                      const ownerQuoted = estimateState(j).quoted;
                       return ownerQuoted && j.estMin > 0 ? (
                         <span className="mono" style={{ fontWeight: 600, color: "var(--accent)" }}>
                           {money(j.estMin)}{j.estMin !== j.estMax ? ` – ${money(j.estMax)}` : ""}
@@ -117,7 +123,7 @@ export default async function OwnerJobs({ searchParams }) {
                       </Link>
                     ) : !isClosed && j.status === "BOOKED" ? (
                       (() => {
-                        const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+                        const ownerQuoted = estimateState(j).quoted;
                         const hasQuote = ownerQuoted && j.estMin > 0;
                         return hasQuote ? (
                           <>
@@ -149,6 +155,7 @@ export default async function OwnerJobs({ searchParams }) {
         </table>
         {jobs.length === 0 && <div className="empty">No jobs here.</div>}
       </div>
+      <Pager basePath="/owner/jobs" params={{ status }} page={page} pageSize={PAGE} total={totalCount} />
     </>
   );
 }

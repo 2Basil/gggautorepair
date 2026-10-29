@@ -27,7 +27,10 @@ export default async function VehiclePage({ params }) {
           <h1>{v.make} {v.model} <span className="reg" style={{ fontSize: "1rem", verticalAlign: "middle" }}>{prettyReg(v.regNo)}</span></h1>
           <div className="muted">{v.year} · {VEHICLE_TYPES[v.type]?.label} · {v.fuel.toLowerCase()} · {v.odometer.toLocaleString("en-US")} km{SHOW_PRICES.customerBills ? ` · lifetime spend ${money(spent)}` : ""}</div>
         </div>
-        <Link href={`/book?vehicle=${v.id}`} className="btn btn-primary">Book a service</Link>
+        <div className="row" style={{ gap: 8 }}>
+          {v.userId === user.id && <Link href={`/vehicles/${v.id}/edit`} className="btn btn-ghost">Edit</Link>}
+          <Link href={`/book?vehicle=${v.id}`} className="btn btn-primary">Book a service</Link>
+        </div>
       </div>
 
       <div className="grid grid-2" style={{ alignItems: "start" }}>

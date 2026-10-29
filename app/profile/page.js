@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import UsernameForm from "./UsernameForm";
 import Icon from "@/components/Icon";
+import DeleteAccount from "./DeleteAccount";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My Profile — ZZZ Auto Garage" };
@@ -83,6 +84,16 @@ export default async function ProfilePage() {
         </p>
         <Link href="/forgot-password" className="btn btn-ghost btn-sm">Change password</Link>
       </div>
+
+      {user.role === "CUSTOMER" && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <h2 style={{ fontSize: "1rem", marginBottom: 8 }}>Delete account</h2>
+          <p className="muted small" style={{ marginBottom: 12 }}>
+            Permanently removes your account, vehicles and service history. Not possible while a service is open or a bill is unpaid.
+          </p>
+          <DeleteAccount />
+        </div>
+      )}
     </div>
   );
 }

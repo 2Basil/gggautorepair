@@ -1,4 +1,5 @@
 import { requireStaff } from "@/lib/auth";
+import { estimateState } from "@/lib/estimateState";
 import { db } from "@/lib/db";
 import OwnerSidebar from "@/components/OwnerSidebar";
 import OwnerEstimateAlert from "@/components/OwnerEstimateAlert";
@@ -16,15 +17,16 @@ export default async function OwnerLayout({ children }) {
     include: {
       vehicle: true,
       user: true,
-      logs: { orderBy: { createdAt: "desc" } },
+      logs: {
+        where: { OR: [{ note: { startsWith: "Estimate sent:" } }, { note: { contains: "customer accepted" } }, { note: { contains: "booked service" } }] },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
     },
   });
 
   const serializedJobs = pendingJobs.map((j) => {
-    const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
-    const customerAccepted = j.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
-    const estimateLog = j.logs?.find((l) => l.note?.startsWith("Estimate sent:"));
-    const ownerNote = estimateLog?.note ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "") : "";
+    const { quoted: ownerQuoted, accepted: customerAccepted, ownerNote } = estimateState(j);
     return {
       id: j.id,
       code: j.code,

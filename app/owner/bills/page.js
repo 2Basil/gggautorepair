@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import ShareBill from "@/components/ShareBill";
+import Pager from "@/components/Pager";
 import { fmtDate, money, prettyReg, normReg } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,12 @@ export default async function OwnerBills({ searchParams }) {
   const q = String(sp.q || "").trim();
   const reg = normReg(q);
 
-  const where = q
+  const PAGE = 25;
+  const page = Math.max(1, parseInt(sp.page, 10) || 1);
+  const state = ["due", "paid"].includes(sp.state) ? sp.state : "";
+  const stateWhere = state === "due" ? { paid: false } : state === "paid" ? { paid: true } : {};
+
+  const searchWhere = q
     ? {
         OR: [
           { number: { contains: q } },
@@ -20,14 +26,20 @@ export default async function OwnerBills({ searchParams }) {
         ],
       }
     : {};
+  const where = { ...searchWhere, ...stateWhere };
 
-  const bills = await db.bill.findMany({
-    where,
-    include: { user: true, vehicle: true },
-    orderBy: { createdAt: "desc" },
-    take: 150,
-  });
-  const due = bills.filter((b) => !b.paid).reduce((a, b) => a + b.total, 0);
+  const [bills, totalCount, dueAgg] = await Promise.all([
+    db.bill.findMany({
+      where,
+      include: { user: true, vehicle: true },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * PAGE,
+      take: PAGE,
+    }),
+    db.bill.count({ where }),
+    db.bill.aggregate({ where: { paid: false }, _sum: { total: true } }),
+  ]);
+  const due = dueAgg._sum.total || 0;
 
   return (
     <>
@@ -49,6 +61,11 @@ export default async function OwnerBills({ searchParams }) {
           defaultValue={q}
           placeholder="Search by Bill Serial Number (e.g. INV-0001), Customer Name, Phone, or Reg No…"
         />
+        <select name="state" defaultValue={state} style={{ maxWidth: 140 }}>
+          <option value="">All bills</option>
+          <option value="due">Due only</option>
+          <option value="paid">Paid only</option>
+        </select>
         <button className="btn btn-dark">Search</button>
         {q && <Link href="/owner/bills" className="btn btn-ghost">Clear</Link>}
       </form>
@@ -98,6 +115,7 @@ export default async function OwnerBills({ searchParams }) {
           </div>
         )}
       </div>
+      <Pager basePath="/owner/bills" params={{ q, state }} page={page} pageSize={PAGE} total={totalCount} />
     </>
   );
 }

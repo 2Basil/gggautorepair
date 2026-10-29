@@ -23,7 +23,7 @@ export default async function Employees({ searchParams }) {
       <AddEmployee />
 
       {sp.reset && <div className="alert ok">Password updated.</div>}
-      {sp.error && <div className="alert err">Password must be at least 6 characters.</div>}
+      {sp.error && <div className="alert err">Password must be at least 8 characters.</div>}
 
       <div className="table-wrap" style={{ marginTop: 18 }}>
         <table className="tbl">
@@ -37,7 +37,7 @@ export default async function Employees({ searchParams }) {
                 <td>
                   <form action={resetEmployeePassword} className="row" style={{ gap: 6 }}>
                     <input type="hidden" name="id" value={e.id} />
-                    <input name="password" type="password" minLength={6} placeholder="New password" required style={{ maxWidth: 170 }} autoComplete="new-password" />
+                    <input name="password" type="password" minLength={8} placeholder="New password" required style={{ maxWidth: 170 }} autoComplete="new-password" />
                     <button className="btn btn-ghost btn-sm">Set</button>
                   </form>
                 </td>

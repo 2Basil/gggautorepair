@@ -1,6 +1,7 @@
 "use client";
 
 import { SHOW_PRICES } from "@/lib/settings";
+import { estimateState } from "@/lib/estimateState";
 import { useActionState, useEffect, useState } from "react";
 import { getJobStatus, customerCancelJob, rescheduleJob, customerAcceptEstimate } from "@/app/actions";
 import { STEPS, STATUS_LABEL } from "@/lib/config";
@@ -139,13 +140,11 @@ export default function StatusTracker({ jobId, initial, estMin, estMax, vehicleL
   // Check if owner sent a custom estimate note
   // Check if owner sent a manual estimate quote
   const estimateLog = [...(data.logs || [])].reverse().find((l) => l.note?.toLowerCase().includes("estimate sent:"));
-  const customerAccepted = (data.logs || []).some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
-  const hasEstimate = !!estimateLog && (currentEstMin > 0 || currentEstMax > 0);
+  const customerAccepted = estimateState(data).accepted;
+  const hasEstimate = estimateState(data).quoted && (currentEstMin > 0 || currentEstMax > 0);
 
   // Extract owner note text (stripping the price prefix)
-  const ownerNoteText = estimateLog?.note
-    ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "")
-    : "";
+  const ownerNoteText = estimateState(data).ownerNote;
 
   return (
     <div>

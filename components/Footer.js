@@ -23,6 +23,8 @@ export default function Footer() {
         <div className="footer-links small">
           <Link href="/plans">Plans</Link>
           <Link href="/book">Get an estimate</Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
           <Link href="/owner">Owner portal</Link>
         </div>
       </div>

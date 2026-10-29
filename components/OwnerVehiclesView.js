@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { estimateState } from "@/lib/estimateState";
 import Link from "next/link";
 import { fmtDate, money, prettyReg } from "@/lib/format";
 import { STATUS_LABEL } from "@/lib/config";
@@ -190,7 +191,7 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                     </div>
                   ) : isRequested ? (
                     (() => {
-                      const ownerQuoted = (j.logs || []).some((l) => l.note?.startsWith("Estimate sent:"));
+                      const ownerQuoted = estimateState(j).quoted;
                       return (
                         <div>
                           <span className="tiny muted uppercase" style={{ fontWeight: 700 }}>Starting Estimate:</span>
@@ -229,7 +230,7 @@ export default function OwnerVehiclesView({ requestedJobs = [], acceptedJobs = [
                     </Link>
                   ) : isRequested ? (
                     (() => {
-                      const ownerQuoted = (j.logs || []).some((l) => l.note?.startsWith("Estimate sent:"));
+                      const ownerQuoted = estimateState(j).quoted;
                       const hasQuote = ownerQuoted && j.estMin > 0;
                       return (
                         <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>

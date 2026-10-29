@@ -102,6 +102,10 @@ model Job {
   estMin    Int
   estMax    Int
   status    String    @default("BOOKED") // BOOKED | REPAIRING | REPAIRED | TESTING | READY | DELIVERED | CANCELLED
+  quotedAt  DateTime? // set when the garage sends an estimate
+  acceptedAt DateTime? // set when the customer accepts it
+  ownerNote String?   // note sent with the estimate
+  assignedToId Int?   // employee handling this job
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   items     JobItem[]
@@ -211,4 +215,46 @@ model ServicePrice {
   updatedAt   DateTime @default(now())
 
   @@unique([serviceId, vehicleType])
+}
+
+// Owner-configured ways for customers to pay (Zelle, Cash App, bank, etc.)
+model PaymentMethod {
+  id           String  @id
+  type         String
+  title        String
+  badge        String?
+  details      String
+  accountName  String?
+  instructions String?
+  active       Int     @default(1)
+  updatedAt    String?
+}
+
+// Simple DB-backed rate limiter (login, OTP, password reset)
+model RateLimit {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+}
+
+// Audit trail of staff actions
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  actorId   Int?
+  actorName String?
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Customer reviews after a job is delivered
+model Review {
+  id        Int      @id @default(autoincrement())
+  jobId     Int      @unique
+  userId    Int
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
 }

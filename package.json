@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
+    "test": "node --test tests/core.test.mjs",
+    "db:migrate": "node prisma/migrate-ready.js",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "seed": "node prisma/seed.js",

@@ -191,12 +191,15 @@ export default function RegisterForm({ channel = "email", verify = true }) {
           </div>
           <div className="field">
             <label htmlFor="password">Password *</label>
-            <input id="password" name="password" type="password" minLength={6} autoComplete="new-password" required />
+            <input id="password" name="password" type="password" minLength={8} autoComplete="new-password" required />
           </div>
           <div className="field full">
             <label htmlFor="address">Address</label>
             <input id="address" name="address" autoComplete="street-address" />
           </div>
+          <p className="muted small full" style={{ gridColumn: "1 / -1" }}>
+            By creating an account you agree to our <a href="/terms" target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Privacy Policy</a>.
+          </p>
         </div>
         <button type="button" className="btn btn-primary btn-block" onClick={next}>Continue to vehicle details →</button>
       </div>

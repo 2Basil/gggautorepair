@@ -96,6 +96,14 @@ export default function OwnerSidebar({ owner = true, pendingRequests = 0 }) {
               Staff
             </Link>
           )}
+          <Link href="/owner/reminders" className={isActive("/owner/reminders") ? "active" : ""}>
+            Reminders
+          </Link>
+          {owner && (
+            <Link href="/owner/activity" className={isActive("/owner/activity") ? "active" : ""}>
+              Activity
+            </Link>
+          )}
           <Link href="/owner/settings" className={isActive("/owner/settings") ? "active" : ""}>
             Settings
           </Link>
@@ -209,6 +217,24 @@ export default function OwnerSidebar({ owner = true, pendingRequests = 0 }) {
                 >
                   <Icon name="user" size={17} />
                   <span>Staff &amp; Mechanics</span>
+                </Link>
+              )}
+
+              <Link
+                href="/owner/reminders"
+                className={`sidebar-link ${isActive("/owner/reminders") ? "active" : ""}`}
+              >
+                <Icon name="clock" size={17} />
+                <span>Service Reminders</span>
+              </Link>
+
+              {owner && (
+                <Link
+                  href="/owner/activity"
+                  className={`sidebar-link ${isActive("/owner/activity") ? "active" : ""}`}
+                >
+                  <Icon name="list" size={17} />
+                  <span>Activity &amp; Reviews</span>
                 </Link>
               )}
 

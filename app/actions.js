@@ -1,6 +1,9 @@
 "use server";
 
 import { SHOW_PRICES, REQUIRE_VERIFICATION } from "@/lib/settings";
+import { estimateState } from "@/lib/estimateState";
+import { tooMany, recordHit, clearHits } from "@/lib/rateLimit";
+import { headers } from "next/headers";
 
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
@@ -13,11 +16,14 @@ import { uniqueUserCode, uniqueUsername, validateUsername } from "@/lib/userCode
 import { predict } from "@/lib/pricing";
 import { learnFromBill, loadSamples } from "@/lib/learn";
 import { normReg, billTotals, money } from "@/lib/format";
-import { STATUS_KEYS, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
+import { STATUS_KEYS, STATUS_LABEL, VEHICLE_TYPES, FUELS, GARAGE } from "@/lib/config";
 import Stripe from "stripe";
 import { baseUrl } from "@/lib/baseUrl";
+import { notifyUser, sendMail, wrap } from "@/lib/mail";
+import { logActivity } from "@/lib/activity";
 
 const s = (v) => String(v ?? "").trim();
+const STATUS_LABEL_TEXT = (k) => STATUS_LABEL[k] || k;
 const int = (v, d = 0) => {
   const n = parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : d;
@@ -65,7 +71,7 @@ export async function registerCustomer(_prev, fd) {
   if (!name || !email.includes("@") || phone.length < 9) return { error: "Please fill in your name, a valid email and phone number." };
   const channel = otpChannel();
   if (REQUIRE_VERIFICATION && !(await isVerified(channel === "email" ? email : phone))) return { error: channel === "email" ? "Please verify your email with the code we send you first." : "Please verify your mobile number with the OTP first." };
-  if (password.length < 6) return { error: "Password must be at least 6 characters." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
   const vehicle = readVehicle(f);
   const ve = vehicleError(vehicle);
   if (ve) return { error: ve, step: 2 };
@@ -185,9 +191,21 @@ export async function login(_prev, fd) {
   const id = s(fd.get("email")).toLowerCase();
   const password = String(fd.get("password") || "");
   const next = s(fd.get("next"));
+  // Brute-force protection: 8 failures per account and 30 per IP in 15 minutes
+  const ip = ((await headers()).get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+  const idKey = `login:${id}`;
+  const ipKey = `loginip:${ip}`;
+  if ((await tooMany(idKey, 8)) || (await tooMany(ipKey, 30))) {
+    return { error: "Too many failed attempts. Please wait 15 minutes and try again." };
+  }
   // owners and customers log in with their email, employees with their employee ID
   const user = id.includes("@") ? await db.user.findUnique({ where: { email: id } }) : await db.user.findUnique({ where: { empId: id } });
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) return { error: "Incorrect ID/email or password." };
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    await recordHit(idKey, 900);
+    await recordHit(ipKey, 900);
+    return { error: "Incorrect ID/email or password." };
+  }
+  await clearHits(idKey);
   await createSession(user);
   const staff = user.role === "OWNER" || user.role === "EMPLOYEE";
   if (next.startsWith("/") && !next.startsWith("//") && (staff || !next.startsWith("/owner"))) redirect(next);
@@ -264,7 +282,7 @@ export async function addEmployee(_prev, fd) {
   const password = String(fd.get("password") || "");
   if (!name) return { error: "Enter the employee's name." };
   if (!/^[a-z0-9._-]{3,24}$/.test(empId)) return { error: "Employee ID must be 3-24 characters: letters, numbers, dot, dash or underscore (no spaces, no @)." };
-  if (password.length < 6) return { error: "Password must be at least 6 characters." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
   if (await db.user.findUnique({ where: { empId } })) return { error: "That Employee ID is already taken." };
   await db.user.create({
     data: { name, empId, email: `${empId}@staff.local`, phone: "-", passwordHash: await bcrypt.hash(password, 12), role: "EMPLOYEE" },
@@ -278,7 +296,7 @@ export async function resetEmployeePassword(fd) {
   const id = int(fd.get("id"));
   const password = String(fd.get("password") || "");
   const emp = await db.user.findUnique({ where: { id } });
-  if (!emp || emp.role !== "EMPLOYEE" || password.length < 6) redirect("/owner/employees?error=password");
+  if (!emp || emp.role !== "EMPLOYEE" || password.length < 8) redirect("/owner/employees?error=password");
   await db.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(password, 12) } });
   redirect("/owner/employees?reset=1");
 }
@@ -386,6 +404,10 @@ export async function bookJob(vehicleId, query) {
     },
   });
   await db.job.update({ where: { id: job.id }, data: { code: `PS-${1000 + job.id}` } });
+  if (process.env.OWNER_EMAIL) {
+    const site = (await baseUrl()).replace(/\/$/, "");
+    await sendMail(process.env.OWNER_EMAIL, "New service request", wrap("New service request", [`${user.name} (${user.phone}) · ${vehicle.make} ${vehicle.model}`, q.slice(0, 300)], `${site}/owner/jobs/${job.id}`));
+  }
   revalidatePath("/dashboard");
   revalidatePath("/owner");
   revalidatePath("/owner/jobs");
@@ -408,6 +430,9 @@ export async function getJobStatus(jobId) {
     status: job.status,
     estMin: job.estMin,
     estMax: job.estMax,
+    quotedAt: job.quotedAt ? job.quotedAt.toISOString() : null,
+    acceptedAt: job.acceptedAt ? job.acceptedAt.toISOString() : null,
+    ownerNote: job.ownerNote ?? null,
     items: job.items.map((i) => ({
       id: i.id,
       description: i.description,
@@ -447,16 +472,22 @@ export async function cancelSubscription(fd) {
 /* ---------------------------------- owner ---------------------------------- */
 
 export async function updateJobStatus(fd) {
-  await requireStaff();
+  const staff = await requireStaff();
   const id = int(fd.get("jobId"));
   const status = s(fd.get("status"));
   if (!STATUS_KEYS.includes(status)) return;
   const rawNote = s(fd.get("note"));
   const note = rawNote ? rawNote.slice(0, 100) : null;
+  const prev = await db.job.findUnique({ where: { id }, select: { userId: true, code: true, status: true } });
   await db.job.update({
     where: { id },
     data: { status, logs: { create: { status, note } } },
   });
+  if (prev && prev.status !== status) {
+    await logActivity(staff, "STATUS", `${prev.code}: ${prev.status} → ${status}`);
+    const site = (await baseUrl()).replace(/\/$/, "");
+    await notifyUser(prev.userId, `Update on ${prev.code}: ${STATUS_LABEL_TEXT(status)}`, [`Your job ${prev.code} is now: ${STATUS_LABEL_TEXT(status)}.`, note || ""].filter(Boolean), `${site}/track/${id}`);
+  }
   revalidatePath(`/owner/jobs/${id}`);
   revalidatePath(`/track/${id}`);
   revalidatePath("/owner");
@@ -513,7 +544,7 @@ export async function acceptJobRequest(fd) {
 }
 
 export async function sendJobEstimate(fd) {
-  await requireStaff();
+  const staff = await requireStaff();
   const jobId = int(fd.get("jobId"));
   const minVal = int(fd.get("estMin"));
   const maxVal = int(fd.get("estMax")) || minVal;
@@ -530,9 +561,17 @@ export async function sendJobEstimate(fd) {
     data: {
       estMin,
       estMax,
+      quotedAt: new Date(),
+      ownerNote: note,
+      acceptedAt: null,
       logs: { create: { status: job.status, note: logNote } },
     },
   });
+  await logActivity(staff, "ESTIMATE", `${job.code}: $${estMin}${estMax !== estMin ? `–$${estMax}` : ""}`);
+  {
+    const site = (await baseUrl()).replace(/\/$/, "");
+    await notifyUser(job.userId, `Your estimate is ready (${job.code})`, SHOW_PRICES.estimate || SHOW_PRICES.customerBills ? [`Estimate: ${money(estMin)}${estMax !== estMin ? ` – ${money(estMax)}` : ""}.`, note] : ["The garage has sent you an estimate.", note], `${site}/track/${job.id}`);
+  }
 
   revalidatePath("/owner");
   revalidatePath("/owner/jobs");
@@ -546,7 +585,10 @@ export async function customerAcceptEstimate(fd) {
   const jobId = int(fd.get("jobId"));
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || (job.userId !== user.id && user.role !== "OWNER")) return { error: "Job not found" };
+  if (!job.quotedAt && !(job.estMin > 0)) return { error: "No estimate to accept yet." };
+  if (["DELIVERED", "CANCELLED"].includes(job.status)) return { error: "This job is closed." };
 
+  await db.job.update({ where: { id: job.id }, data: { acceptedAt: new Date() } });
   await db.jobLog.create({
     data: {
       jobId: job.id,
@@ -606,7 +648,7 @@ export async function rescheduleJob(_prev, fd) {
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
-  return new Stripe(key, { apiVersion: "2025-04-30" });
+  return new Stripe(key);
 }
 
 export async function createStripeCheckout(billId) {
@@ -638,17 +680,29 @@ export async function createStripeCheckout(billId) {
     mode: "payment",
     customer_email: user.email,
     metadata: { billId: String(bill.id), userId: String(user.id) },
-    line_items: bill.items.map((i) => ({
-      price_data: {
-        currency: "usd",
-        product_data: {
-          name: i.description,
-          description: `${i.category} — ${bill.vehicle.make} ${bill.vehicle.model}`,
+    line_items: [
+      ...bill.items.map((i) => ({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: i.description,
+            description: `${i.category} — ${bill.vehicle.make} ${bill.vehicle.model}`,
+          },
+          unit_amount: Math.round(i.unitPrice * 100),
         },
-        unit_amount: Math.round(i.unitPrice * 100),
-      },
-      quantity: i.qty,
-    })),
+        quantity: i.qty,
+      })),
+      ...(bill.tax > 0
+        ? [{
+            price_data: {
+              currency: "usd",
+              product_data: { name: `Tax (${bill.taxPct}%)` },
+              unit_amount: Math.round(bill.tax * 100),
+            },
+            quantity: 1,
+          }]
+        : []),
+    ],
     discounts,
     success_url: `${appUrl}/bills/${bill.id}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/bills/${bill.id}?payment=cancelled`,
@@ -774,6 +828,8 @@ export async function verifyAndConfirmPayment(fd) {
     }
   }
 
+  await logActivity(staff, "PAYMENT", `${bill.number} marked paid (${money(bill.total)})`);
+  await notifyUser(bill.userId, `Payment received — ${bill.number}`, [`Thank you! Your payment for ${bill.number} has been confirmed.`]);
   revalidatePath(`/bills/${bill.id}`);
   revalidatePath(`/owner/bills/${bill.id}`);
   revalidatePath("/owner/bills");
@@ -889,7 +945,7 @@ export async function removeJobItem(fd) {
 }
 
 export async function generateJobBillFromItems(fd) {
-  await requireStaff();
+  const staff = await requireStaff();
   const jobId = int(fd.get("jobId"));
   const discount = Math.max(0, int(fd.get("discount")));
   const taxPct = Math.min(40, Math.max(0, int(fd.get("taxPct"), GARAGE.taxPct)));
@@ -936,6 +992,11 @@ export async function generateJobBillFromItems(fd) {
   });
   await db.bill.update({ where: { id: bill.id }, data: { number: `INV-${String(bill.id).padStart(4, "0")}` } });
   await learnFromBill(bill.id);
+  await logActivity(staff, "BILL", `${`INV-${String(bill.id).padStart(4, "0")}`} for ${job.code ?? jobId}: ${money(t.total)}`);
+  {
+    const site = (await baseUrl()).replace(/\/$/, "");
+    await notifyUser(job.userId, `Your bill is ready (INV-${String(bill.id).padStart(4, "0")})`, [SHOW_PRICES.customerBills ? `Total due: ${money(t.total)}.` : "Your final bill is ready.", paid ? "It is marked as paid." : "You can pay online or follow the garage's payment instructions."], `${site}/bills/${bill.id}`);
+  }
 
   await db.job.update({
     where: { id: jobId },
@@ -1155,14 +1216,15 @@ export async function getOwnerPendingEstimates() {
     include: {
       vehicle: true,
       user: true,
-      logs: { orderBy: { createdAt: "desc" } },
+      logs: {
+        where: { OR: [{ note: { startsWith: "Estimate sent:" } }, { note: { contains: "customer accepted" } }, { note: { contains: "booked service" } }] },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
     },
   });
   return jobs.map((j) => {
-    const ownerQuoted = j.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
-    const customerAccepted = j.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
-    const estimateLog = j.logs?.find((l) => l.note?.startsWith("Estimate sent:"));
-    const ownerNote = estimateLog?.note ? estimateLog.note.replace(/^Estimate sent:\s*\$[^.]*\.\s*/i, "") : "";
+    const { quoted: ownerQuoted, accepted: customerAccepted, ownerNote } = estimateState(j);
     return {
       id: j.id,
       code: j.code,
@@ -1191,3 +1253,97 @@ export async function getOwnerPendingEstimates() {
 
 
 
+
+
+/* ------------------- vehicles, account, assignment, reviews ------------------- */
+
+export async function updateVehicle(fd) {
+  const user = await requireUser();
+  const id = int(fd.get("vehicleId"));
+  const v = await db.vehicle.findUnique({ where: { id } });
+  if (!v || v.userId !== user.id) redirect("/dashboard");
+  const next = readVehicle({ ...Object.fromEntries(fd), regNo: fd.get("regNo") || v.regNo });
+  const ve = vehicleError(next);
+  if (ve) redirect(`/vehicles/${id}/edit?error=${encodeURIComponent(ve)}`);
+  if (next.regNo !== v.regNo && (await db.vehicle.findUnique({ where: { regNo: next.regNo } }))) {
+    redirect(`/vehicles/${id}/edit?error=${encodeURIComponent("This registration number is already registered.")}`);
+  }
+  await db.vehicle.update({ where: { id }, data: next });
+  revalidatePath(`/vehicles/${id}`);
+  revalidatePath("/dashboard");
+  redirect(`/vehicles/${id}`);
+}
+
+export async function deleteVehicle(fd) {
+  const user = await requireUser();
+  const id = int(fd.get("vehicleId"));
+  const v = await db.vehicle.findUnique({ where: { id } });
+  if (!v || v.userId !== user.id) redirect("/dashboard");
+  const open = await db.job.count({ where: { vehicleId: id, status: { notIn: ["DELIVERED", "CANCELLED"] } } });
+  const due = await db.bill.count({ where: { vehicleId: id, paid: false } });
+  if (open || due) {
+    redirect(`/vehicles/${id}/edit?error=${encodeURIComponent("This vehicle has an open service or an unpaid bill, so it can't be removed yet.")}`);
+  }
+  await db.vehicle.delete({ where: { id } });
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
+}
+
+export async function deleteAccount(_prev, fd) {
+  const user = await requireUser("/profile");
+  if (user.role !== "CUSTOMER") return { error: "Staff accounts are removed by the owner." };
+  const full = await db.user.findUnique({ where: { id: user.id } });
+  if (!full || !(await bcrypt.compare(String(fd.get("password") || ""), full.passwordHash))) return { error: "Incorrect password." };
+  if (s(fd.get("confirm")).toUpperCase() !== "DELETE") return { error: 'Type DELETE to confirm.' };
+  const open = await db.job.count({ where: { userId: user.id, status: { notIn: ["DELIVERED", "CANCELLED"] } } });
+  const due = await db.bill.count({ where: { userId: user.id, paid: false } });
+  if (open || due) return { error: "You still have an open service or an unpaid bill. Please settle it first." };
+  await db.review.deleteMany({ where: { userId: user.id } });
+  await db.user.delete({ where: { id: user.id } });
+  await destroySession();
+  redirect("/?deleted=1");
+}
+
+export async function assignJob(fd) {
+  const staff = await requireStaff();
+  const jobId = int(fd.get("jobId"));
+  const empId = int(fd.get("employeeId"));
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, code: true } });
+  if (!job) return;
+  let who = null;
+  if (empId) {
+    who = await db.user.findUnique({ where: { id: empId }, select: { id: true, name: true, role: true } });
+    if (!who || (who.role !== "EMPLOYEE" && who.role !== "OWNER")) return;
+  }
+  await db.job.update({ where: { id: jobId }, data: { assignedToId: who ? who.id : null } });
+  await logActivity(staff, "ASSIGN", `${job.code} → ${who ? who.name : "unassigned"}`);
+  revalidatePath(`/owner/jobs/${jobId}`);
+  revalidatePath("/owner/jobs");
+}
+
+export async function sendServiceReminder(fd) {
+  const staff = await requireStaff();
+  const v = await db.vehicle.findUnique({ where: { id: int(fd.get("vehicleId")) }, include: { user: true } });
+  if (!v) redirect("/owner/reminders");
+  const site = (await baseUrl()).replace(/\/$/, "");
+  const ok = await notifyUser(v.userId, "Time for a service check", [`Hi ${v.user.name}, it has been a while since your ${v.make} ${v.model} was serviced.`, "Book a visit any time — it only takes a minute."], `${site}/book?vehicle=${v.id}`);
+  if (ok) await logActivity(staff, "REMINDER", `${v.make} ${v.model} (${v.user.name})`);
+  redirect(ok ? "/owner/reminders?sent=1" : "/owner/reminders?failed=1");
+}
+
+export async function submitReview(fd) {
+  const user = await requireUser();
+  const jobId = int(fd.get("jobId"));
+  const rating = Math.min(5, Math.max(1, int(fd.get("rating"), 5)));
+  const comment = s(fd.get("comment")).slice(0, 500) || null;
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job || job.userId !== user.id || job.status !== "DELIVERED") redirect(`/track/${jobId}`);
+  await db.review.upsert({
+    where: { jobId },
+    create: { jobId, userId: user.id, rating, comment },
+    update: { rating, comment },
+  });
+  revalidatePath(`/track/${jobId}`);
+  revalidatePath("/owner/reviews");
+  redirect(`/track/${jobId}?reviewed=1`);
+}

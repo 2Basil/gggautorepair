@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { estimateState } from "@/lib/estimateState";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { STEPS, STATUS_LABEL, CATEGORIES, GARAGE } from "@/lib/config";
@@ -6,7 +7,7 @@ import { fmtDateTime, fmtDate, money, prettyReg } from "@/lib/format";
 import ContactButtons from "@/components/ContactButtons";
 import OwnerBillGenerator from "@/components/OwnerBillGenerator";
 import OwnerTimelineManager from "@/components/OwnerTimelineManager";
-import { updateJobStatus, addJobItem, removeJobItem, sendJobEstimate, ownerBookJob, ownerDeclineJob } from "@/app/actions";
+import { assignJob, updateJobStatus, addJobItem, removeJobItem, sendJobEstimate, ownerBookJob, ownerDeclineJob } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function OwnerJob({ params }) {
   const isPaid = !!paidBill;
   const isClosed = isPaid || job.status === "DELIVERED" || job.status === "CANCELLED";
 
+  const staffList = await db.user.findMany({ where: { role: { in: ["EMPLOYEE", "OWNER"] } }, select: { id: true, name: true, role: true }, orderBy: { name: "asc" } });
   const services = await db.service.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
   const subtotal = job.items.reduce((a, i) => a + (i.qty || 1) * (i.unitPrice || 0), 0);
   const currentIdx = STEPS.findIndex((s) => s.key === job.status);
@@ -53,6 +55,16 @@ export default async function OwnerJob({ params }) {
           <Link href="/owner/jobs" className="btn btn-ghost btn-sm">← Back to queries</Link>
         </div>
       </div>
+
+      <form action={assignJob} className="card no-print" style={{ marginBottom: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="hidden" name="jobId" value={job.id} />
+        <b>Assigned to</b>
+        <select name="employeeId" defaultValue={job.assignedToId || 0} style={{ maxWidth: 240 }}>
+          <option value={0}>Unassigned</option>
+          {staffList.map((u) => <option key={u.id} value={u.id}>{u.name}{u.role === "OWNER" ? " (owner)" : ""}</option>)}
+        </select>
+        <button className="btn btn-dark btn-sm">Save</button>
+      </form>
 
       {/* Reschedule alert banner if customer sent a reschedule request */}
       {(() => {
@@ -125,9 +137,9 @@ export default async function OwnerJob({ params }) {
             </div>
           ) : !isClosed && job.status === "BOOKED" ? (
             (() => {
-              const ownerQuoted = job.logs?.some((l) => l.note?.startsWith("Estimate sent:"));
+              const ownerQuoted = estimateState(job).quoted;
               const hasQuote = ownerQuoted && job.estMin > 0;
-              const customerAccepted = job.logs?.some((l) => l.note?.toLowerCase().includes("customer accepted") || l.note?.toLowerCase().includes("booked service"));
+              const customerAccepted = estimateState(job).accepted;
               return hasQuote ? (
                 <>
                   <div style={{ background: "linear-gradient(135deg, #f0fdf4, #eafaf1)", border: "2px solid #22c55e", borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
