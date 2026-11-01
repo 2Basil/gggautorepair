@@ -6,8 +6,8 @@ out
 *.db
 *.db-journal
 .vercel
-auth
-auth-wal
+/auth
+/auth-wal
 auth-shm
 .vercel
 .env*
